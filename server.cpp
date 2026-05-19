@@ -32,7 +32,10 @@ static void doSomething(int connfd) {
 
     const char* wbuf = "world\n";
 
-    write(connfd , wbuf , strlen(wbuf));
+    n = write(connfd , wbuf , strlen(wbuf));
+    if (n < 0) {
+        die("write() error"); 
+    }
 }
 
 int main() {
