@@ -6,6 +6,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <cassert>
+#include <string_view>
+
+const size_t k_max_msg = 4096; //specify maximum message length
 
 
 
@@ -81,6 +84,49 @@ static int32_t writeFull(int fd ,const char *buf , size_t n) {
 
     }
     return 0;
+}
+
+
+static int32_t one_request(int connfd) {
+
+    //4 byte header reserved for length of the messae
+    char rbuf[4 + k_max_msg];
+    errno = 0; //set the universal error to zero
+
+    //get the size of the recieved message from the first 4 bytes and store it to rbuf
+    int32_t err = readFull(connfd , rbuf , 4);
+    if(err) { //err = 0 || -1
+        msg(errno == 0 ? "EOF" : "read() Error");
+        return err;
+    }
+
+    uint32_t len = 0;
+    memcpy(&len , rbuf , 4); //copy the stored len from 1st 4bytes from rbuf -> len;
+    
+    if(len > k_max_msg) {
+        msg("Too Long Message!");
+        return -1;
+    }
+
+    err = readFull(connfd , &rbuf[4] , len); //read the message of len ans insert it to the rbuf from 4th index
+    if(err) {
+        msg("read() Error");
+        return err;
+    }
+
+    //do somthing
+    std::cout << "Client Says: " << std::string_view(&rbuf[4] , len) << std::endl; //print the message from index 4
+
+    //send replay using the same protocol
+    const char reply[] = "World";
+    char wbuf[4+sizeof(reply)];
+
+    len = (uint32_t)strlen(reply);
+
+    //form the message in the wbuf
+    memcpy(wbuf , &len , 4);
+    memcpy(&wbuf[4] , reply , len);
+    return writeFull(connfd , wbuf , 4+len);   
 }
 
 int main() {
