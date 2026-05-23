@@ -119,7 +119,7 @@ int main() {
 
         // wait for readiness (from the inserted connections)
         //nfds_t = unsigned int or long
-        int rv = poll(poll_args.data() , (nfds_t)poll_args.size() , -1); // Tell the kernel to watch our sockets;  block indefinitely until an event occurs
+        int rv = poll(poll_args.data() , (nfds_t)poll_args.size() , -1); // Tell the kernel to watch our sockets;  block indefinitely until an event occurs (Your thread goes to sleep here.)
         if(rv < 0 && errno == EINTR) {
             continue; //not an error
         }
@@ -128,18 +128,77 @@ int main() {
             die("POLL");
         }
 
+        /**The sections below only runs when the poll signaled somthing */
+
         //Accept new connection requests (from the socket at zero index);
         if(poll_args[0].revents) { //revents is filled by the kernel when the client have something to say 
 
-            //
+            //accept the new connection request and add it to the array by using the fd number as the index to access the connection
+            Conn *conn = handleAccept(fd);
+
+            if(conn) {
+                //put the created connection into the map 
+                if(fd2conn.size() <= (size_t)(conn->fd +1)) {
+                    fd2conn.resize(conn->fd+1);
+                }
+                fd2conn[conn->fd] = conn;
+            }
         }
+
+        /**
+         * 
+                        THREAD STATUS
+                            │
+                            ▼
+                ┌─────────────────────────┐
+                │  poll(...) blocks!      │  ◄── Your thread goes to sleep here.
+                │  (Zero CPU usage)       │      It stays here for seconds, hours, or days.
+                └────────────┬────────────┘
+                            │
+                            │  (Kernel detects a client sent network data!)
+                            ▼
+                ┌─────────────────────────┐
+                │  poll(...) wakes up     │  ◄── The kernel wakes your thread up.
+                └────────────┬────────────┘
+                            │
+                            ▼
+                ┌─────────────────────────┐
+                │ for(size_t i = 1; ...)  │  ◄── THIS LOOP RUNS EXACTLY ONCE.
+                │ (Processes active fds)  │      It sweeps through, handles the data, and finishes.
+                └────────────┬────────────┘
+                            │
+                            ▼
+                ┌─────────────────────────┐
+                │ Loops back to top       │  ◄── Your thread immediately goes back to sleep
+                │ and blocks on poll()    │      inside poll(), waiting for the next signal.
+                └─────────────────────────┘
+         */
+        
+     // handle connection sockets (serve the request by clients) 
+        for(size_t i = 1 ; i < poll_args.size() ; i++) {
+
+            uint32_t ready = poll_args[i].revents;
+            Conn *conn = fd2conn[poll_args[i].fd];
+
+            if(ready & POLLIN) { //& is used to find the condition from the bit masking
+                handleRead(conn); //application logic
+            }
+            if(ready & POLLOUT) {
+                handleWrite(conn); //application logic
+            }
+
+            if((ready & POLLERR) || conn->wantClose) {
+                (void)close(conn->fd);
+                fd2conn[conn->fd] = nullptr;
+                delete conn;
+            }
+        }
+
+         
         
 
 
-     }
-
-   
-
+    }
     return 0;
 
 }
