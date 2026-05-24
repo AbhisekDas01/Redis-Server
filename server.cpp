@@ -294,7 +294,7 @@ int main() {
         // wait for readiness (from the inserted connections)
         //nfds_t = unsigned int or long
         int rv = poll(poll_args.data() , (nfds_t)poll_args.size() , -1); // Tell the kernel to watch our sockets;  block indefinitely until an event occurs (Your thread goes to sleep here.)
-        if(rv < 0 && errno == EINTR) {
+        if(rv < 0 && errno == EINTR) { // EINTR = Interrupted System Call
             continue; //not an error
         }
 
