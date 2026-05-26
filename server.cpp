@@ -15,6 +15,7 @@
 
 //STL
 #include <vector>
+#include <map>
 
 const size_t k_max_msg = 32 << 20;  // likely larger than the kernel buffer
 
@@ -50,6 +51,8 @@ struct Conn {
 
 };
 
+
+
 static void bufAppend(std::vector<uint8_t> &buf , const uint8_t *data , size_t size){
     buf.insert(buf.end() , data , data+size); 
     /**
@@ -62,6 +65,127 @@ static void bufAppend(std::vector<uint8_t> &buf , const uint8_t *data , size_t s
 
 static void bufConsume(std::vector<uint8_t> &buf , size_t n){
     buf.erase(buf.begin() , buf.begin()+n);
+}
+
+const size_t k_max_args = 200 * 1000;
+
+static bool readU32(const uint8_t*&curr , const uint8_t *end , uint32_t &out) {
+
+    if(curr + 4 > end) {
+        return false; //not enough data is recived get more data to parse
+    }
+
+    memcpy(&out , curr , 4);
+    curr += 4; //move pointr forward to parse new data;
+    return true;
+}
+
+static bool readStr(const uint8_t *&curr , const uint8_t *end , size_t len , std::string &out) {
+
+    if(curr + len > end) { //not enough data is available
+        return false;
+    }
+
+    out.assign(curr , curr+len);
+    curr += len;
+    return true;
+}
+
+//data format
+//nstr-> number of packets
+//len->size of each string
+// +------+-----+------+-----+------+-----+-----+------+
+// | nstr | len | str1 | len | str2 | ... | len | strn |
+// +------+-----+------+-----+------+-----+-----+------+
+static int32_t parseRequest(const uint8_t *data , size_t size , std::vector<std::string> &out) {
+    const uint8_t *end = data + size;
+    uint32_t nstr = 0;
+    if(!readU32(data , end , nstr)) { //get the number of messages
+        return -1;
+    }
+
+    if(nstr > k_max_args) {
+        return -1; // Limit exceed
+    }
+
+    //now decode every message packet
+    while(out.size() < nstr) {
+
+        //1.find the len of each message
+        uint32_t len = 0;
+        if(!readU32(data , end , len)) {
+            return -1;
+        }
+        //2.parse the message of that length
+        out.push_back(std::string()); //insert an empty string to the back 
+        if(!readStr(data , end , len ,  out.back())) {
+            return -1;
+        }
+    }
+
+    if(data != end) {
+        return -1; //data contains garbage data
+    }
+    return 0;
+}
+
+//Response Status
+enum {
+    RES_OK = 0,
+    RES_ERR = 1,    // error
+    RES_NX = 2,     // key not found
+};
+
+struct Response {
+    uint32_t status = 0;
+    std::vector<uint8_t> data;
+};
+
+
+//use the STL map now
+static std::map<std::string , std::string> gData;
+
+
+static void doRequest(std::vector<std::string> &cmd , Response &resp) {
+
+    //Handle the GET Request
+    if(cmd.size() == 2 && cmd[0] == "get") {
+        auto it = gData.find(cmd[1]);
+        if(it == gData.end()) {
+            resp.status = RES_NX; //key not found
+        }
+
+        //key found
+        std::string value = it->second;
+        //send the response
+        resp.data.assign(value.begin() , value.end());
+        return;
+    }
+
+    //SET REquest
+    if(cmd.size() == 3 && cmd[0] == "set") {
+        // Use swap to avoid copying the string data. It trades internal pointers
+        // between the map's string and the temporary command string.
+        gData[cmd[1]].swap(cmd[2]);
+        return;
+    }
+
+    //delete request
+    if(cmd.size() == 2 && cmd[0] == "del") {
+        gData.erase(cmd[2]);
+        return;
+    }
+
+    resp.status = RES_ERR;
+    return;
+
+}
+
+static void makeResponse(Response &resp , std::vector<uint8_t> &out) {
+    uint32_t resp_len = 4 + resp.data.size();
+    bufAppend(out , (const uint8_t *)&resp_len , 4);
+    bufAppend(out , (const uint8_t *)&resp.status , 4);
+    bufAppend(out , resp.data.data() , resp_len);
 }
 
 static bool tryOneRequest(Conn *conn) {
@@ -86,16 +210,15 @@ static bool tryOneRequest(Conn *conn) {
 
     const uint8_t *request = &conn->incoming[4];
 
-    //print the message by clinet
-    std::cout << "Client Want to say : ";
-    std::cout.write(reinterpret_cast<const char*>(request), len);
-    std::cout << std::endl;
+    std::vector<std::string> cmd;
+    if(parseRequest(request , len , cmd) < 0) {
+        conn->wantClose = true;
+        return false;
+    }
 
-    //gerate new response
-    const uint8_t response[] = "Hello this is from the server";
-    uint32_t newLen = sizeof(response);
-    bufAppend(conn->outgoing , (const uint8_t*)&newLen , 4);
-    bufAppend(conn->outgoing , response , newLen);
+    Response resp;
+    doRequest(cmd , resp);
+    makeResponse(resp , conn->outgoing);
 
      // application logic done! remove the request message.
      bufConsume(conn->incoming , (size_t)(4+len));
@@ -205,6 +328,7 @@ static void handleRead(Conn *conn) {
     //Store the recieved data in a persistent storage (conn->incoming) 
     bufAppend(conn->incoming , buf , (size_t)rv);
 
+   
     // TCP Stream Parser: A fast client might bundle multiple requests into a single read().
     // This loop aggressively extracts and handles every complete message frame back-to-back 
     // until the buffer is empty or holds an incomplete packet, preventing pipeline deadlocks.
