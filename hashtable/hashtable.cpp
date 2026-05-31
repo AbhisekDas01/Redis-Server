@@ -3,6 +3,7 @@
 #include "hashtable.h"
 
 //initialize a fixed size hash table 
+// See explanation: hashtable.md#d-bitwise-masking-vs-modulo
 static void hInit(HTable *htab , size_t n) {
     assert(n > 0 && (n & (n-1)) == 0); //check if the size is > 0 && n must be a power of 2 (for faster module operation)
     htab->tab = (HNode **)calloc(n , sizeof(HNode *));  //allocate the n size block of memeory (Create a array of HNode * of n size) -> HNode ** -> its a pointer to pointer
@@ -23,6 +24,7 @@ static void hInsert(HTable *htab , HNode *node) {
 }
 
 //lookup function for the hashmap 
+// See explanation: hashtable.md#c-the-double-pointer-hnode-list-traversal-technique
 /**
  * HTable *htab -> the hash table we are looking to extract the data
  * HNode *key -> the dummy node created by using the hashfuction to match the index
@@ -66,6 +68,7 @@ static HNode *hDetach(HTable *htab , HNode **from) {
 
 
 //Progressive rehashing
+// See explanation: hashtable.md#incremental-garbage-collection
 const size_t k_rehashing_work = 128;    // constant work
 
 static void hmHelpRehashint(HMap *hmap) {

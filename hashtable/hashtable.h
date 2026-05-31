@@ -5,6 +5,7 @@
 #include <cstddef> //for NULL && size_t
 
 //intrusive list node. An intrusive hashtable doesn’t care about the data, but it still needs the hash value for the insertion.
+// See explanation: hashtable.md#a-intrusive-data-structure
 struct HNode {
     HNode *next = NULL;
     uint64_t hcode = 0; //it will hold the hash value of each node
@@ -20,6 +21,7 @@ struct HTable {
 //Create a resizable hashmap 
 
 //The resizable HMap is based on the fixed-size HTab. It contains 2 of them for the progressive rehashing.
+// See explanation: hashtable.md#b-progressive-incremental-rehashing
 struct HMap {
     HTable newer;
     HTable older;
