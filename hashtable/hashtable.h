@@ -16,3 +16,18 @@ struct HTable {
     size_t mask = 0; //the size of the arrya should be multiple of 2 , mask = 2^n-1
     size_t size = 0; //number of keys stored currently
 };
+
+//Create a resizable hashmap 
+
+//The resizable HMap is based on the fixed-size HTab. It contains 2 of them for the progressive rehashing.
+struct HMap {
+    HTable newer;
+    HTable older;
+    size_t migratePos = 0;
+};
+
+
+//get set and delete interface
+HNode *hmLookup(HMap *hmap , HNode *key , bool (*eq)(HNode * , HNode*));
+void hmInsert(HMap *hmap , HNode *node);
+HNode *hmDelete(HMap *hmap , HNode *key , bool (*eq)(HNode* , HNode*));
