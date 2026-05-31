@@ -5,7 +5,7 @@
 //initialize a fixed size hash table 
 static void hInit(HTable *htab , size_t n) {
     assert(n > 0 && (n & (n-1)) == 0); //check if the size is > 0 && n must be a power of 2 (for faster module operation)
-    htab->tab = (HNode **)calloc(n , sizeof(HNode *));  //allocate the n size block of memeory 
+    htab->tab = (HNode **)calloc(n , sizeof(HNode *));  //allocate the n size block of memeory (Create a array of HNode * of n size) -> HNode ** -> its a pointer to pointer
     htab->mask = n-1;
     htab->size = 0;
 }
@@ -23,6 +23,11 @@ static void hInsert(HTable *htab , HNode *node) {
 }
 
 //lookup function for the hashmap 
+/**
+ * HTable *htab -> the hash table we are looking to extract the data
+ * HNode *key -> the dummy node created by using the hashfuction to match the index
+ * bool (*eq)(Node * , Node*) => its a pointer to a function which hash the signature as [bool fun(Node * , Node *)]
+ */
 static HNode **hLookUp(HTable *htab , HNode *key , bool (*eq)(HNode * , HNode*)) {
     
     if(!htab->tab) { //if the table is empty
@@ -50,4 +55,11 @@ static HNode **hLookUp(HTable *htab , HNode *key , bool (*eq)(HNode * , HNode*))
     return NULL;
 }
 
-//delete operation
+//delete operation (not actual delete)
+static HNode *hDetach(HTable *htab , HNode **from) {
+
+    HNode *node = *from; //get the target node
+    *from = node->next; //assign the next node to the from to detach the current node
+    htab->size--;
+    return node;
+}
