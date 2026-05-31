@@ -17,6 +17,12 @@
 #include <vector>
 #include <map>
 
+//hashmap
+#include "hashtable/hashtable.h"
+
+#define container_of(ptr , T , member) \
+    ((T *)((char *)ptr - offsetof(T , member)))
+
 const size_t k_max_msg = 32 << 20;  // likely larger than the kernel buffer
 
 
@@ -142,37 +148,139 @@ struct Response {
 };
 
 
-//use the STL map now
-static std::map<std::string , std::string> gData;
+// global states hashmap
+static struct {
+    HMap db; //top-level hashtable
+} gData;
+
+// KV pair for the top-level hashtable
+struct Entry {
+    struct HNode node; //hashtable node
+    std::string key;
+    std::string val;
+};
+
+//function to check the match for the keys
+static bool entryEq(HNode *lhs , HNode *rhs) {
+    struct Entry *le = container_of(lhs , struct Entry , node);
+    struct Entry *re = container_of(rhs , struct Entry , node);
+    return le->key == re->key;
+}
+
+//FNV hash function
+static uint64_t strHash(const uint8_t *data, size_t len) {
+    // 1. Initialize the accumulator with the FNV Offset Basis (Magic Number).
+    // This seeds the hash with a chaotic bit pattern so that empty strings 
+    // or strings starting with 0x00 do not accidentally result in a hash of zero.
+    uint32_t h = 0x811C9DC5;
+
+    // 2. Loop through every character/byte in the input string sequentially.
+    for (size_t i = 0; i < len; i++) {
+        // Step A: Stir the current byte directly into our hash accumulator.
+        // Step B: Multiply by the FNV Prime (0x01000193, which is 16,777,619 in decimal).
+        // 
+        // This multiplication acts as a high-speed bit mixer, forcing every new 
+        // byte to ripple and cascade across all 32 bits (the "avalanche effect").
+        // Any integer overflow here is safe, wrapping around naturally via modulo 2^32.
+        h = (h + data[i]) * 0x01000193;
+    }
+
+    // 3. Return the fully scrambled 32-bit integer hash value.
+    // The compiler automatically zero-extends this 32-bit value into a 64-bit 
+    // uint64_t, leaving the upper 32 bits as zeros, matching our HNode definition.
+    return h;
+}
+
+
+
+/**
+ * 
+ * REDIS FUNCTIONS (GET , SET , DEL)
+ */
+
+static void doGet(std::vector<std::string> &cmd , Response &out) {
+
+    // cmd = {method , key , value}
+    Entry dummy; //create a dummy node just for lookup 
+    dummy.key.swap(cmd[1]); //insert the value of key
+
+    dummy.node.hcode = strHash((uint8_t *)dummy.key.data() , dummy.key.size()); //generate the hash for the key we are looking
+
+    //hashtable lookup
+    HNode *nodeFound = hmLookup(&gData.db , &dummy.node , &entryEq);
+
+    if(!nodeFound) { //not found 
+        out.status = RES_NX;
+        return;
+    }
+
+    //data found (give the value in response)
+    const std::string &val = container_of(nodeFound , Entry , node)->val;
+    assert(val.size() <= k_max_msg);
+    out.data.assign(val.begin() , val.end());
+
+}
+
+//SET function
+static void doSet(std::vector<std::string> &cmd , Response &out) {
+
+    Entry dummy;  // a dummy `Entry` just for the lookup
+    dummy.key.swap(cmd[1]); //swap is the faster option to insert the data to string
+
+    dummy.node.hcode = strHash((uint8_t *)dummy.key.data() , dummy.key.size()); //create the hash value
+
+    //lookup the key in the database to check if its already exists
+    HNode *nodeFound = hmLookup(&gData.db , &dummy.node , &entryEq);
+
+    if(nodeFound){ //update the value if the key already exists
+        container_of(nodeFound , Entry , node)->val.swap(cmd[2]);
+
+    } else {
+        //if not exists then create one 
+        Entry *ent = new Entry();
+        ent->key.swap(dummy.key);
+        ent->val.swap(cmd[2]);
+        ent->node.hcode = dummy.node.hcode;
+        hmInsert(&gData.db , &ent->node);
+    }
+
+    
+
+}
+
+static void doDel(std::vector<std::string> &cmd , Response &out) {
+
+    //create a dummy Entry for lookup 
+    Entry dummy;
+    dummy.key.swap(cmd[1]);
+
+    dummy.node.hcode = strHash((uint8_t *)dummy.key.data() , dummy.key.size());
+
+    HNode *nodeFound = hmDelete(&gData.db , &dummy.node , &entryEq); //detach the node
+
+    if(nodeFound) { //if node found delete delete it
+        delete container_of(nodeFound , Entry , node);
+    }
+}
 
 
 static void doRequest(std::vector<std::string> &cmd , Response &resp) {
 
     //Handle the GET Request
     if(cmd.size() == 2 && cmd[0] == "get") {
-        auto it = gData.find(cmd[1]);
-        if(it == gData.end()) {
-            resp.status = RES_NX; //key not found
-        }
-
-        //key found
-        std::string value = it->second;
-        //send the response
-        resp.data.assign(value.begin() , value.end());
+        doGet(cmd , resp);
         return;
     }
 
     //SET REquest
     if(cmd.size() == 3 && cmd[0] == "set") {
-        // Use swap to avoid copying the string data. It trades internal pointers
-        // between the map's string and the temporary command string.
-        gData[cmd[1]].swap(cmd[2]);
+        doSet(cmd , resp);
         return;
     }
 
     //delete request
     if(cmd.size() == 2 && cmd[0] == "del") {
-        gData.erase(cmd[2]);
+        doDel(cmd , resp);
         return;
     }
 

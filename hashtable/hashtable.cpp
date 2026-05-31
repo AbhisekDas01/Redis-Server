@@ -65,6 +65,34 @@ static HNode *hDetach(HTable *htab , HNode **from) {
 }
 
 
+//Progressive rehashing
+const size_t k_rehashing_work = 128;    // constant work
+
+static void hmHelpRehashint(HMap *hmap) {
+    size_t nwork = 0;
+
+    while(nwork < k_rehashing_work && hmap->older.size > 0) {
+
+        //find a non empty slot to migrate
+        HNode **from = &hmap->older.tab[hmap->migratePos];
+        if(!from) { //if the slot is empty then move to next slot
+            hmap->migratePos++;
+            continue;
+        }
+
+        //if the slot if found then detact one node from the older and transfer to the newer node
+        HNode *node = hDetach(&hmap->older , from);
+        hInsert(&hmap->newer , node);
+        nwork++;
+    }
+    
+    // discard the old table if done
+    if(hmap->older.size == 0 && hmap->older.tab) {
+        free(hmap->older.tab);
+        hmap->older = HTable{};
+    }
+}
+
 //HashMap rehashing new table allocation
 static void hmTriggerRehashing(HMap *hmap) {
 
@@ -81,7 +109,9 @@ static void hmTriggerRehashing(HMap *hmap) {
 
  HNode *hmLookup(HMap *hmap , HNode *key , bool(*eq)(HNode * , HNode *)) {
 
-    //1.find the key int the newer table
+    hmHelpRehashint(hmap); //help transfering some portion of keys from the older table to newer one
+
+    //1.find the key int the  newer table
     HNode **from = hLookUp(&hmap->newer , key , eq);
 
     if(!from) { //if the data is not found in the newer address
@@ -98,6 +128,7 @@ static void hmTriggerRehashing(HMap *hmap) {
 */
 
 HNode *hmDelete(HMap *hmap , HNode *key , bool (*eq)(HNode * , HNode*)) {
+    hmHelpRehashint(hmap); //help transfering some portion of keys from the older table to newer one
 
     if(HNode **from = hLookUp(&hmap->newer , key , eq)) {
         return hDetach(&hmap->newer , from);
@@ -109,3 +140,36 @@ HNode *hmDelete(HMap *hmap , HNode *key , bool (*eq)(HNode * , HNode*)) {
 
     return NULL;
 }
+
+
+/*HashMap insert function*/
+/**
+ * 1.Allocate the memory to the newer table if it is not initialzied
+ * 2.Insert the data to the new table
+ * 3.Check if we need to  rehash by checking the loadfactor
+ * finally: help to migrate some data to the newer table (it will be done in a phase wise);
+ */
+
+const size_t k_max_load_factor = 8; //maximum keys we can store in a single chain
+
+ void hmInsert(HMap *hmap , HNode *node) {
+    if(!hmap->newer.tab) { //if no data is allocated the allocate the memory
+        hInit(&hmap->newer , 4); //initialize with size 4
+    }
+
+    hInsert(&hmap->newer , node); //insert the data to the table
+
+    //check if the rehashing is needed (if the data exceeds the load factor limit)
+    if(!hmap->older.tab) { //if any existing older table dont exist then check for the load factor (the rehashing process may already running )
+
+        size_t threshold = (hmap->newer.mask+1) * k_max_load_factor; //maximum data we can store in the table
+        
+        if(hmap->newer.size >= threshold) { //if the size exceed the threshold then we need to rehash
+
+            hmTriggerRehashing(hmap);
+        }
+    }
+
+    hmHelpRehashint(hmap); //help transfering some portion of keys from the older table to newer one
+
+ }

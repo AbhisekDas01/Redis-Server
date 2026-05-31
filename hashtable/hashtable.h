@@ -23,7 +23,7 @@ struct HTable {
 struct HMap {
     HTable newer;
     HTable older;
-    size_t migratePos = 0;
+    size_t migratePos = 0; //it is used to store the last index that has migrated to the newer hashtable
 };
 
 
