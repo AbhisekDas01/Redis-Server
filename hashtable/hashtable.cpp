@@ -63,3 +63,49 @@ static HNode *hDetach(HTable *htab , HNode **from) {
     htab->size--;
     return node;
 }
+
+
+//HashMap rehashing new table allocation
+static void hmTriggerRehashing(HMap *hmap) {
+
+    hmap->older = hmap->newer; //make the current table as old one 
+    hInit(&hmap->newer , (hmap->newer.mask + 1)*2); //assign a double size array
+    hmap->migratePos = 0;
+}
+
+//HashMap lookUp operation
+/**
+ * As we have both the tables older and newer then we will search 
+ * newer first if not found then search older (To get the data during the rehashing process)
+ */
+
+ HNode *hmLookup(HMap *hmap , HNode *key , bool(*eq)(HNode * , HNode *)) {
+
+    //1.find the key int the newer table
+    HNode **from = hLookUp(&hmap->newer , key , eq);
+
+    if(!from) { //if the data is not found in the newer address
+        from = hLookUp(&hmap->older , key , eq);
+    }
+
+    return from ? *from : NULL; //return the node
+ } 
+
+//HashMap delete function
+/**
+* first find the key in the newer table if founc the call detach
+* else find the older table
+*/
+
+HNode *hmDelete(HMap *hmap , HNode *key , bool (*eq)(HNode * , HNode*)) {
+
+    if(HNode **from = hLookUp(&hmap->newer , key , eq)) {
+        return hDetach(&hmap->newer , from);
+    }
+
+    if(HNode **from = hLookUp(&hmap->older , key , eq)) {
+        return hDetach(&hmap->older , from);
+    }
+
+    return NULL;
+}
