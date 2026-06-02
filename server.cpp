@@ -164,7 +164,7 @@ static void bufAppendU8(Buffer &buf , uint8_t data) {
 }
 
 static void bufAppendU32(Buffer &buf , uint32_t data) {
-    bufAppend(buf , (const uint8_t *)data , 4); //insert the length in 4bytes
+    bufAppend(buf , (const uint8_t *)&data , 4); //insert the length in 4bytes
 }
 
 static void bufAppendI64(Buffer &buf , int64_t data) {

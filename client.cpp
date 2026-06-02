@@ -60,7 +60,7 @@ static int32_t writeFull(int fd ,const char *buf , size_t n) {
     return 0;
 }
 
-const size_t k_max_msg = 4096;
+
 
 //data format
 //Tlen = total size of the message
@@ -111,11 +111,7 @@ enum {
 
 static int32_t printResponse(uint8_t *data , size_t size) {
 
-    if(size < 0) {
-        msg("Bad response");
-        return -1;
-    }
-
+    
     switch (data[0]) {
         case TAG_NIL:
             printf("(NIL)\n");
@@ -188,7 +184,7 @@ static int32_t printResponse(uint8_t *data , size_t size) {
                 printf("(arr) len=%d\n" , len);
                 size_t arrayBytes = 1 + 4;
                 for(uint32_t i = 0 ; i < len ; i++) {
-                    uint32_t rv = printResponse(&data[arrayBytes] , size-arrayBytes);
+                    ssize_t rv = printResponse(&data[arrayBytes] , size-arrayBytes);
                     if(rv < 0) {
                         return rv;
                     }
@@ -270,7 +266,7 @@ int main(int argc , char **argv){
     }
 
     std::vector<std::string> cmd;
-    for(int i = 0 ; i < argc ; i++) { //read the input from the cmd
+    for(int i = 1 ; i < argc ; i++) { //read the input from the cmd
         cmd.push_back(argv[i]);
     }
    
