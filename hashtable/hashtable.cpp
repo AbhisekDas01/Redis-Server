@@ -176,3 +176,25 @@ const size_t k_max_load_factor = 8; //maximum keys we can store in a single chai
     hmHelpRehashint(hmap); //help transfering some portion of keys from the older table to newer one
 
  }
+
+ size_t hmSize(HMap *hmap) {
+    return hmap->newer.size + hmap->older.size;
+ }
+
+ static bool hForEach(HTable *htab , bool (*f)(HNode * , void *) , void *arg) {
+    for(size_t i = 0 ; htab->mask != 0 && i <=  htab->mask ; i++ ) { //go to each index
+
+        for(HNode *node = htab->tab[i]; node != NULL ; node = node->next) {
+            if(!f(node , arg)) {
+                return false;
+            }
+        }
+        
+    }
+    return true;
+ }
+
+ void   hmForeach(HMap *hmap, bool (*f)(HNode *, void *), void *arg) {
+
+    hForEach(&hmap->newer , f , arg) && hForEach(&hmap->older , f , arg);
+ }

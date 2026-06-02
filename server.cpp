@@ -15,7 +15,7 @@
 
 //STL
 #include <vector>
-#include <map>
+
 
 //hashmap
 #include "hashtable/hashtable.h"
@@ -139,6 +139,11 @@ static int32_t parseRequest(const uint8_t *data , size_t size , std::vector<std:
 }
 
 
+// error code for TAG_ERR
+enum {
+    ERR_UNKNOWN = 1,    // unknown command
+    ERR_TOO_BIG = 2,    // response too big
+};
 
 // data types of serialized data
 enum {
@@ -166,6 +171,10 @@ static void bufAppendI64(Buffer &buf , int64_t data) {
     bufAppend(buf , (const uint8_t *)&data , 8);
 }
 
+static void bufAppendDbl(Buffer &buf , double data){
+    bufAppend(buf , (const uint8_t *)&data , 8);
+}
+
 /**Generate the nil response */
 static void outNil(Buffer &out) {
     bufAppendU8(out , TAG_NIL);
@@ -187,6 +196,18 @@ static void outInt(Buffer &out , uint64_t val) {
 static void outArr(Buffer &out , uint32_t n) {
     bufAppendU8(out , TAG_ARR); //Tag as array
     bufAppendU32(out , n); //len of the array
+}
+
+static void outDbl(Buffer &out , double val) {
+    bufAppendU8(out , TAG_DBL);
+    bufAppendDbl(out , val);
+}
+
+static void outErr(Buffer &out , uint32_t code , const std::string &msg) {
+    bufAppendU8(out , TAG_ERR); //tag err
+    bufAppendU32(out , code); //error code
+    bufAppendU32(out , (uint32_t)msg.size()); //msg length
+    bufAppend(out , (const uint8_t*)msg.data() , msg.size());
 }
 
 
@@ -306,6 +327,19 @@ static void doDel(std::vector<std::string> &cmd , Buffer &out) {
     return outInt(out  , nodeFound ? 1 : 0); // the number of deleted keys
 }
 
+static bool cbKeys(HNode *node , void *arg) {
+
+    Buffer &out = *(Buffer *)arg;
+    const std::string &key = container_of(node , Entry , node)->key;
+    outStr(out , key.data() , key.size());
+    return true;
+}
+
+static void doKeys(std::vector<std::string> & , Buffer &out) {
+    outArr(out , (uint32_t)hmSize(&gData.db));
+    hmForeach(&gData.db , &cbKeys , (void *)&out);
+}
+
 
 static void doRequest(std::vector<std::string> &cmd , Buffer &out) {
 
@@ -327,14 +361,19 @@ static void doRequest(std::vector<std::string> &cmd , Buffer &out) {
         return;
     }
 
-    return;
+    if(cmd.size() == 1 && cmd[0] == "keys") {
+        doKeys(cmd , out);
+        return;
+    }
+
+    return outErr(out , ERR_UNKNOWN , "Unknown command!");
 
 }
 
 //function to reserve the spaces for the data in out buffer in the response
 static void responseBegin(Buffer &out , size_t *header) {
     *header = out.size(); //message header postion
-    bufAppendU32(out , 0);
+    bufAppendU32(out , 0); //reserve space
 
 }
 
@@ -346,8 +385,12 @@ static void responseEnd(Buffer &out , size_t header) {
     size_t msgSize = responseSize(out , header);
     if(msgSize > k_max_msg) {
         out.resize(header+4);
-        out
+        outErr(out , ERR_TOO_BIG , "Response is too big.");
+        msgSize = responseSize(out , header); //get the error message size
     }
+
+    uint32_t len = (uint32_t)msgSize;
+    memcpy(&out[header] , &len , 4);
 }
 
 static bool tryOneRequest(Conn *conn) {
@@ -380,8 +423,10 @@ static bool tryOneRequest(Conn *conn) {
 
     size_t headerPos = 0;
 
-
+    responseBegin(conn->outgoing , &headerPos);
     doRequest(cmd , conn->outgoing);
+    responseEnd(conn->outgoing , headerPos);
+
     
 
      // application logic done! remove the request message.
