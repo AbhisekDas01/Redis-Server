@@ -92,3 +92,19 @@ static AVLNode *rotateRight(AVLNode *root) {
     avlUpdate(newRoot);
     return newRoot;
 }
+
+//Rotation for the left side imbalance
+static AVLNode *avlFixLeft(AVLNode *root) {
+    if(avlHeight(root->left->left) < avlHeight(root->left->right)) { //LR rotation
+        root->left = rotateLeft(root->left); //1.Right rotaion of the one half to make the LL imbalance
+    }
+    return rotateRight(root); //RR rotation 
+}
+//rotation for the right side imbalance 
+static AVLNode *avlFixRight(AVLNode *root) {
+
+    if(avlHeight(root->right->right) < avlHeight(root->right->left)) {
+        root->right = rotateRight(root->right);
+    }
+    return rotateLeft(root);
+}
