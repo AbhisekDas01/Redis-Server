@@ -45,7 +45,7 @@ static AVLNode *rotateLeft(AVLNode *root) {
     AVLNode *inner = newRoot->left;
 
     root->right = inner; //connect the root to the internal node
-    if(inner) {
+    if(inner) { // if inner node actually exist then update its parent
         inner->parent = root;
     }
 
@@ -60,3 +60,35 @@ static AVLNode *rotateLeft(AVLNode *root) {
     return newRoot;
 }
 
+//function to handle right rotation (LL imbalance)
+/*
+   
+                       50 <- root
+                      /  \
+         newRoot ->  40  10    
+                    /  \
+                   5    30  <- inner
+                  /
+                 60 
+*/
+
+static AVLNode *rotateRight(AVLNode *root) {
+
+    AVLNode *parent = root->parent;
+    AVLNode *newRoot = root->left;
+    AVLNode *inner = newRoot->right;
+
+    root->left = inner;
+    if(inner) {
+        inner->parent = root;
+    }
+
+    newRoot->parent = parent;
+
+    newRoot->right = root;
+    root->parent = newRoot;
+
+    avlUpdate(root);
+    avlUpdate(newRoot);
+    return newRoot;
+}
