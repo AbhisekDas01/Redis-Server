@@ -108,3 +108,36 @@ static AVLNode *avlFixRight(AVLNode *root) {
     }
     return rotateLeft(root);
 }
+
+
+//function to initiate the operation of the rotations
+AVLNode *avlFix(AVLNode *root) {
+   
+    while(true) {
+         AVLNode **from = &root; //stores the physical memory addres of the root pointer (pointer to pointer
+         AVLNode *parent = root->parent;
+
+         if(parent) { //if the parent exists then check on which side the root exists 
+            from = parent->left == root? &parent->left : &parent->right; //(store the address of the left or right pointers to the from so that we can direcly used them  )
+        }
+
+        avlUpdate(root);
+
+        uint32_t l = avlHeight(root->left);
+        uint32_t r = avlHeight(root->right);
+
+        //fix the imbalance (max 2)
+        if(l == r + 2) { //left side imbalance
+            *from = avlFixLeft(root); // here the *from means (parent->left /parent->right)
+        } else if(l + 2 == r) {
+            *from = avlFixRight(root);
+        }
+
+        if(!parent) { //root node reached return
+            return *from;
+        }
+
+        root = parent;  // continue to the parent node because its height may be changed
+    }
+
+}
