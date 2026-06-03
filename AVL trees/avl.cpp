@@ -112,6 +112,7 @@ static AVLNode *avlFixRight(AVLNode *root) {
 
 //function to initiate the operation of the rotations
 AVLNode *avlFix(AVLNode *root) {
+
    
     while(true) {
          AVLNode **from = &root; //stores the physical memory addres of the root pointer (pointer to pointer
@@ -141,3 +142,37 @@ AVLNode *avlFix(AVLNode *root) {
     }
 
 }
+
+
+/**
+ * 
+ * AVL Node detach function
+ * 2 CASES
+ * -> AT MOST one children 
+ * -> 2 childrens
+ */
+
+ //function to delete the node having atmost 1 child
+static AVLNode * avlDelOneChild(AVLNode *node) {
+
+    assert(!node->right || !node->left);
+    AVLNode *child = node->left ? node->left : node->right; //extract the child
+    AVLNode *parent = node->parent;
+
+    //update the child parent
+    if(child) {
+        child->parent = parent;
+    }
+
+    //if we are deleting the root node (parent doesnot exists) 
+    if(!parent) {
+        return child;
+    }
+
+    //we have to link the parents left/right child to the child node
+    AVLNode **from = parent->left == node ? &parent->left : &parent->right;
+    *from = child; //link to appropriate pointer
+
+    return avlFix(parent);
+}
+
