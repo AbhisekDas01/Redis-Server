@@ -16,3 +16,7 @@ inline void avlInit(AVLNode *node) {
     node->left = node->right = node->parent = NULL;
     node->height = 1;
 }
+
+// API
+AVLNode *avlFix(AVLNode *node);
+AVLNode *avlDel(AVLNode *node);

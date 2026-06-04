@@ -176,3 +176,60 @@ static AVLNode * avlDelOneChild(AVLNode *node) {
     return avlFix(parent);
 }
 
+//function to delete node with 2 chilrens
+AVLNode *avlDel(AVLNode *node) {
+
+    //if the node has 0 or one children
+    if(!node->left || !node->right) {
+        return avlDelOneChild(node);
+    }
+
+    //nodes having 2 childs 
+    /**
+     * STEPS:
+     * 1. find the successor node from the right subtree (left most element of right subtree (smaller than right and larger than left subtree))
+     * 2. That successor node must have 0 or 1 child (Call the detach node function on the successor) return value = rootNode;
+     * 3. swap the target node with the succesor node 
+     * 4. Connect all the links
+     * done
+     */
+
+     AVLNode *successor = node->right;
+
+     while (successor->left) {
+        successor = successor->left; // go to the extreme left to find the successor of the current node
+     }
+
+     //detach the successor node from its postion
+     AVLNode *root = avlDelOneChild(successor); //this function returns the root node (by perferming the height adusting bottom to top);
+
+     //put the structural data of the node to the success node (swapping value in intrusive data structure)
+    *successor = *node;
+
+    // Copying the node's contents into the successor (intrusive replace).
+    // We do NOT move or swap the actual node objects — we copy all fields from
+    // `node` into the existing `successor` object. As a result:
+    // - The successor's memory address stays the same (it is the same node object).
+    // - The successor now holds the value, child pointers and metadata that
+    //   previously belonged to `node`.
+    // - We must update the parent pointers of successor's children below so
+    //   those child nodes point back to `successor` and the tree remains valid.
+     //reform the links
+     if(successor->left) {
+        successor->left->parent = successor;
+     }
+     if(successor->right) {
+        successor->right->parent = successor;
+     }
+
+     // attach the successor to the parent, or update the root pointer
+     AVLNode **from = &root; //hold the root node first
+     AVLNode *parent = node->parent;
+
+     if(parent) { //if parent exists then find the exact right or left side to link the successor
+        from = parent->left == node ? &parent->left : &parent->right;
+     }
+
+     *from = successor; //*from may be the root node or the parents left or right
+     return root;
+}
