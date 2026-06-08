@@ -19,6 +19,7 @@
 #include "common.h"
 //hashmap
 #include "hashtable/hashtable.h"
+#include "zset/zset.h"
 
 
 const size_t k_max_msg = 32 << 20;  // likely larger than the kernel buffer
@@ -214,12 +215,24 @@ static struct {
     HMap db; //top-level hashtable
 } gData;
 
+enum {
+    T_INIT  = 0,
+    T_STR   = 1,    // string
+    T_ZSET  = 2,    // sorted set
+};
+
+
 // KV pair for the top-level hashtable
 struct Entry {
-    struct HNode node; //hashtable node
+    struct HNode node;  // hashtable node
     std::string key;
-    std::string val;
+    // value
+    uint32_t type = 0;
+    // one of the following
+    std::string str;
+    ZSet zset;
 };
+
 
 //function to check the match for the keys
 static bool entryEq(HNode *lhs , HNode *rhs) {
