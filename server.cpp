@@ -16,14 +16,13 @@
 //STL
 #include <vector>
 
+#include "common.h"
+#include "helpers/helper.h"
 
 //hashmap
 #include "hashtable/hashtable.h"
+#include "zset/zset.h"
 
-#define container_of(ptr , T , member) \
-    ((T *)((char *)ptr - offsetof(T , member)))
-
-const size_t k_max_msg = 32 << 20;  // likely larger than the kernel buffer
 
 
 static void msg(const char *msg) {
@@ -40,7 +39,7 @@ static void die(const char *msg) {
     abort();
 }
 
-typedef std::vector<uint8_t> Buffer;
+
 
 
 
@@ -62,43 +61,8 @@ struct Conn {
 
 
 
-static void bufAppend(Buffer &buf , const uint8_t *data , size_t size){
-    buf.insert(buf.end() , data , data+size); 
-    /**
-     *  buf.end() -> pointer to the position after the last available data in the vector
-     *  data is the starting address of your raw data.
-
-        data + size uses pointer arithmetic to calculate the ending boundary. In C++, range boundaries are always exclusive (meaning it copies everything up to, but not including, the exact address of data + size).
-     */
-}
-
-static void bufConsume(Buffer &buf , size_t n){
-    buf.erase(buf.begin() , buf.begin()+n);
-}
 
 const size_t k_max_args = 200 * 1000;
-
-static bool readU32(const uint8_t*&curr , const uint8_t *end , uint32_t &out) {
-
-    if(curr + 4 > end) {
-        return false; //not enough data is recived get more data to parse
-    }
-
-    memcpy(&out , curr , 4);
-    curr += 4; //move pointr forward to parse new data;
-    return true;
-}
-
-static bool readStr(const uint8_t *&curr , const uint8_t *end , size_t len , std::string &out) {
-
-    if(curr + len > end) { //not enough data is available
-        return false;
-    }
-
-    out.assign(curr , curr+len);
-    curr += len;
-    return true;
-}
 
 //data format
 //nstr-> number of packets
@@ -139,119 +103,35 @@ static int32_t parseRequest(const uint8_t *data , size_t size , std::vector<std:
 }
 
 
-// error code for TAG_ERR
-enum {
-    ERR_UNKNOWN = 1,    // unknown command
-    ERR_TOO_BIG = 2,    // response too big
-};
-
-// data types of serialized data
-enum {
-    TAG_NIL = 0,    // nil
-    TAG_ERR = 1,    // error code + msg
-    TAG_STR = 2,    // string
-    TAG_INT = 3,    // int64
-    TAG_DBL = 4,    // double
-    TAG_ARR = 5,    // array
-};
-
-//Helper function to help serialization
-
-
-//Helper functions to generate the response
-static void bufAppendU8(Buffer &buf , uint8_t data) {
-    buf.push_back(data);
-}
-
-static void bufAppendU32(Buffer &buf , uint32_t data) {
-    bufAppend(buf , (const uint8_t *)&data , 4); //insert the length in 4bytes
-}
-
-static void bufAppendI64(Buffer &buf , int64_t data) {
-    bufAppend(buf , (const uint8_t *)&data , 8);
-}
-
-static void bufAppendDbl(Buffer &buf , double data){
-    bufAppend(buf , (const uint8_t *)&data , 8);
-}
-
-/**Generate the nil response */
-static void outNil(Buffer &out) {
-    bufAppendU8(out , TAG_NIL);
-}
-
-static void outStr(Buffer &out , const char *s , size_t size) {
-    bufAppendU8(out , TAG_STR); //insert the tag as string (1 byte)
-    bufAppendU32(out , (uint32_t)size);  //push the size of the message (4bytes)
-    bufAppend(out , (const uint8_t *)s , size);
-
-}
-
-//generate the int response
-static void outInt(Buffer &out , uint64_t val) {
-    bufAppendU8(out , TAG_INT);
-    bufAppendI64(out , val);
-}
-
-static void outArr(Buffer &out , uint32_t n) {
-    bufAppendU8(out , TAG_ARR); //Tag as array
-    bufAppendU32(out , n); //len of the array
-}
-
-static void outDbl(Buffer &out , double val) {
-    bufAppendU8(out , TAG_DBL);
-    bufAppendDbl(out , val);
-}
-
-static void outErr(Buffer &out , uint32_t code , const std::string &msg) {
-    bufAppendU8(out , TAG_ERR); //tag err
-    bufAppendU32(out , code); //error code
-    bufAppendU32(out , (uint32_t)msg.size()); //msg length
-    bufAppend(out , (const uint8_t*)msg.data() , msg.size());
-}
-
-
 // global states hashmap
 static struct {
     HMap db; //top-level hashtable
 } gData;
 
+enum {
+    T_INIT  = 0,
+    T_STR   = 1,    // string
+    T_ZSET  = 2,    // sorted set
+};
+
+
 // KV pair for the top-level hashtable
 struct Entry {
-    struct HNode node; //hashtable node
+    struct HNode node;  // hashtable node
     std::string key;
-    std::string val;
+    // value
+    uint32_t type = 0;
+    // one of the following
+    std::string str;
+    ZSet zset;
 };
+
 
 //function to check the match for the keys
 static bool entryEq(HNode *lhs , HNode *rhs) {
     struct Entry *le = container_of(lhs , struct Entry , node);
     struct Entry *re = container_of(rhs , struct Entry , node);
     return le->key == re->key;
-}
-
-//FNV hash function
-static uint64_t strHash(const uint8_t *data, size_t len) {
-    // 1. Initialize the accumulator with the FNV Offset Basis (Magic Number).
-    // This seeds the hash with a chaotic bit pattern so that empty strings 
-    // or strings starting with 0x00 do not accidentally result in a hash of zero.
-    uint32_t h = 0x811C9DC5;
-
-    // 2. Loop through every character/byte in the input string sequentially.
-    for (size_t i = 0; i < len; i++) {
-        // Step A: Stir the current byte directly into our hash accumulator.
-        // Step B: Multiply by the FNV Prime (0x01000193, which is 16,777,619 in decimal).
-        // 
-        // This multiplication acts as a high-speed bit mixer, forcing every new 
-        // byte to ripple and cascade across all 32 bits (the "avalanche effect").
-        // Any integer overflow here is safe, wrapping around naturally via modulo 2^32.
-        h = (h + data[i]) * 0x01000193;
-    }
-
-    // 3. Return the fully scrambled 32-bit integer hash value.
-    // The compiler automatically zero-extends this 32-bit value into a 64-bit 
-    // uint64_t, leaving the upper 32 bits as zeros, matching our HNode definition.
-    return h;
 }
 
 
@@ -341,6 +221,14 @@ static void doKeys(std::vector<std::string> & , Buffer &out) {
 }
 
 
+
+static void doZquery(std::vector<std::string> &cmd , Buffer &out) {
+    // parse the arguments and lookup the KV pair
+    //ZQUERY key score name offset limit
+
+}
+
+
 static void doRequest(std::vector<std::string> &cmd , Buffer &out) {
 
     //Handle the GET Request
@@ -368,29 +256,6 @@ static void doRequest(std::vector<std::string> &cmd , Buffer &out) {
 
     return outErr(out , ERR_UNKNOWN , "Unknown command!");
 
-}
-
-//function to reserve the spaces for the data in out buffer in the response
-static void responseBegin(Buffer &out , size_t *header) {
-    *header = out.size(); //message header postion
-    bufAppendU32(out , 0); //reserve space
-
-}
-
-static size_t responseSize(Buffer &out , size_t header) {
-    return out.size() - header - 4; //it returns exact length of the message 
-}
-
-static void responseEnd(Buffer &out , size_t header) {
-    size_t msgSize = responseSize(out , header);
-    if(msgSize > k_max_msg) {
-        out.resize(header+4);
-        outErr(out , ERR_TOO_BIG , "Response is too big.");
-        msgSize = responseSize(out , header); //get the error message size
-    }
-
-    uint32_t len = (uint32_t)msgSize;
-    memcpy(&out[header] , &len , 4);
 }
 
 static bool tryOneRequest(Conn *conn) {
@@ -434,8 +299,6 @@ static bool tryOneRequest(Conn *conn) {
 
      return true;
     
-} 
-
 //set the file descriptors in non blocking mode
 static void fdSetNonBlock(int fd) {
     errno = 0;
