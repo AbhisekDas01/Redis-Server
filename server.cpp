@@ -17,9 +17,12 @@
 #include <vector>
 
 #include "common.h"
+#include "helpers/helper.h"
+
 //hashmap
 #include "hashtable/hashtable.h"
 #include "zset/zset.h"
+
 
 
 const size_t k_max_msg = 32 << 20;  // likely larger than the kernel buffer
@@ -39,7 +42,7 @@ static void die(const char *msg) {
     abort();
 }
 
-typedef std::vector<uint8_t> Buffer;
+
 
 
 
@@ -61,15 +64,6 @@ struct Conn {
 
 
 
-static void bufAppend(Buffer &buf , const uint8_t *data , size_t size){
-    buf.insert(buf.end() , data , data+size); 
-    /**
-     *  buf.end() -> pointer to the position after the last available data in the vector
-     *  data is the starting address of your raw data.
-
-        data + size uses pointer arithmetic to calculate the ending boundary. In C++, range boundaries are always exclusive (meaning it copies everything up to, but not including, the exact address of data + size).
-     */
-}
 
 static void bufConsume(Buffer &buf , size_t n){
     buf.erase(buf.begin() , buf.begin()+n);
@@ -135,78 +129,6 @@ static int32_t parseRequest(const uint8_t *data , size_t size , std::vector<std:
         return -1; //data contains garbage data
     }
     return 0;
-}
-
-
-// error code for TAG_ERR
-enum {
-    ERR_UNKNOWN = 1,    // unknown command
-    ERR_TOO_BIG = 2,    // response too big
-};
-
-// data types of serialized data
-enum {
-    TAG_NIL = 0,    // nil
-    TAG_ERR = 1,    // error code + msg
-    TAG_STR = 2,    // string
-    TAG_INT = 3,    // int64
-    TAG_DBL = 4,    // double
-    TAG_ARR = 5,    // array
-};
-
-//Helper function to help serialization
-
-
-//Helper functions to generate the response
-static void bufAppendU8(Buffer &buf , uint8_t data) {
-    buf.push_back(data);
-}
-
-static void bufAppendU32(Buffer &buf , uint32_t data) {
-    bufAppend(buf , (const uint8_t *)&data , 4); //insert the length in 4bytes
-}
-
-static void bufAppendI64(Buffer &buf , int64_t data) {
-    bufAppend(buf , (const uint8_t *)&data , 8);
-}
-
-static void bufAppendDbl(Buffer &buf , double data){
-    bufAppend(buf , (const uint8_t *)&data , 8);
-}
-
-/**Generate the nil response */
-static void outNil(Buffer &out) {
-    bufAppendU8(out , TAG_NIL);
-}
-
-static void outStr(Buffer &out , const char *s , size_t size) {
-    bufAppendU8(out , TAG_STR); //insert the tag as string (1 byte)
-    bufAppendU32(out , (uint32_t)size);  //push the size of the message (4bytes)
-    bufAppend(out , (const uint8_t *)s , size);
-
-}
-
-//generate the int response
-static void outInt(Buffer &out , uint64_t val) {
-    bufAppendU8(out , TAG_INT);
-    bufAppendI64(out , val);
-}
-
-static void outArr(Buffer &out , uint32_t n) {
-    bufAppendU8(out , TAG_ARR); //Tag as array
-    bufAppendU32(out , n); //len of the array
-}
-
-static void outDbl(Buffer &out , double val) {
-    bufAppendU8(out , TAG_DBL);
-    bufAppendDbl(out , val);
-}
-
-static void outErr(Buffer &out , uint32_t code , const std::string &msg) {
-    bufAppendU8(out , TAG_ERR); //tag err
-    bufAppendU32(out , code); //error code
-    bufAppendU32(out , (uint32_t)msg.size()); //msg length
-    bufAppend(out , (const uint8_t*)msg.data() , msg.size());
 }
 
 
@@ -325,6 +247,14 @@ static bool cbKeys(HNode *node , void *arg) {
 static void doKeys(std::vector<std::string> & , Buffer &out) {
     outArr(out , (uint32_t)hmSize(&gData.db));
     hmForeach(&gData.db , &cbKeys , (void *)&out);
+}
+
+
+
+static void doZquery(std::vector<std::string> &cmd , Buffer &out) {
+    // parse the arguments and lookup the KV pair
+    //ZQUERY key score name offset limit
+
 }
 
 
