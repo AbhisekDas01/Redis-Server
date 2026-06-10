@@ -3,7 +3,6 @@
 #include <cerrno> //global variable the kernel use to store the last error
 #include <cstdlib>
 #include <cstring>
-#include <string_view>
 
 //system
 #include <sys/socket.h> 
@@ -126,6 +125,13 @@ struct Entry {
     ZSet zset;
 };
 
+//dummy node to check find the the key in the hashmap
+struct LookupKey {
+    struct HNode node;
+    std::string key;
+};
+
+
 
 //function to check the match for the keys
 static bool entryEq(HNode *lhs , HNode *rhs) {
@@ -220,12 +226,64 @@ static void doKeys(std::vector<std::string> & , Buffer &out) {
     hmForeach(&gData.db , &cbKeys , (void *)&out);
 }
 
+static const ZSet k_empty_zset;
 
+//function to extract the zset from the name
+static ZSet *exceptZset(std::string &s) {
+
+    LookupKey key;
+    key.key.swap(s);
+    key.node.hcode = strHash((uint8_t *)key.key.data() , s.size());
+    //find the actual node using the dummy node
+    HNode *hnode = hmLookup(&gData.db , &key.node , &entryEq);
+    if(!hnode) {
+        return (ZSet *)&k_empty_zset;
+    }
+    Entry *ent = container_of(hnode , Entry , node);
+    return ent->type == T_ZSET ? &ent->zset : NULL;
+}
 
 static void doZquery(std::vector<std::string> &cmd , Buffer &out) {
     // parse the arguments and lookup the KV pair
     //ZQUERY key score name offset limit
+    double score = 0;
+    if(!str2dbl(cmd[2] , score)) {
+        return outErr(out, ERR_BAD_ARG, "Expect FP number");
+    }
 
+    std::string &name = cmd[3];
+
+    int64_t offset = 0 , limit = 0;
+    if(!str2int(cmd[4] , offset) || !str2int(cmd[5] , limit)) {
+        return outErr(out , ERR_BAD_ARG , "Expect INT");
+    }
+
+    //get ZSet 
+    ZSet *zset = exceptZset(cmd[1]);
+    if(!zset) {
+        return outErr(out , ERR_BAD_TYP , "Expect zset");
+    }
+
+    //seek to key
+    if(limit < 0) {
+        return outArr(out , 0);
+    } 
+    ZNode *znode = zsetSeekge(zset , score , name.data() , name.size());
+
+    //2. find the offset
+    znode = znodeOffset(znode , offset);
+
+    //3. iterate and output
+    size_t ctx = outBeginArr(out);
+    int64_t n = 0;
+
+    while(znode && n < limit) {
+        outStr(out , znode->name , znode->len);
+        outDbl(out , znode->score);
+        znodeOffset(znode , +1);
+        n+=2; //2 items inserted
+    }
+    outEndArr(out , ctx , n);
 }
 
 
@@ -298,7 +356,7 @@ static bool tryOneRequest(Conn *conn) {
      bufConsume(conn->incoming , (size_t)(4+len));
 
      return true;
-    
+}
 //set the file descriptors in non blocking mode
 static void fdSetNonBlock(int fd) {
     errno = 0;
