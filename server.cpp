@@ -237,7 +237,7 @@ static ZSet *exceptZset(std::string &s) {
     //find the actual node using the dummy node
     HNode *hnode = hmLookup(&gData.db , &key.node , &entryEq);
     if(!hnode) {
-        return (ZSet *)&k_empty_zset;
+        return (ZSet *)&k_empty_zset; //if the node not found means the zset is not created then create a empty zset and return
     }
     Entry *ent = container_of(hnode , Entry , node);
     return ent->type == T_ZSET ? &ent->zset : NULL;
@@ -259,7 +259,7 @@ static void doZquery(std::vector<std::string> &cmd , Buffer &out) {
     }
 
     //get ZSet 
-    ZSet *zset = exceptZset(cmd[1]);
+    ZSet *zset = exceptZset(cmd[1]); //find the proper zset from the key
     if(!zset) {
         return outErr(out , ERR_BAD_TYP , "Expect zset");
     }

@@ -32,3 +32,5 @@ inline uint32_t avlCnt(AVLNode *node) { return node ? node->cnt : 0; }
 AVLNode *avlFix(AVLNode *node);
 AVLNode *avlDel(AVLNode *node);
 AVLNode *avl_offset(AVLNode *node, int64_t offset);
+// returns the rank of node in sorted order
+int64_t avl_rank(AVLNode *node);

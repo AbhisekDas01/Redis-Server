@@ -229,3 +229,43 @@ AVLNode *avlDel(AVLNode *node) {
      *from = successor; //*from may be the root node or the parents left or right
      return root;
 }
+
+/**
+     *              D (rank=r+s+1)        B (rank=r)
+                 ┌───┴───┐             ┌───┴───┐
+        (rank=r) B       E             A       D (rank=r+s+1)
+               ┌─┴─┐                         ┌─┴─┐
+               A   C (size=s)       (size=s) C   E
+ */
+//avl offset funtion
+AVLNode *avl_offset(AVLNode *node, int64_t offset) {
+    int64_t pos = 0; //used to track the current rank of the node
+    while (offset != pos) {
+
+        if(pos < offset && pos + avlCnt(node->right) >= offset) { //means the node is present in the right subtree
+
+            node = node->right;
+            pos += avlCnt(node->left) + 1; //the pos/rank of the left node = rank of the parent + size of the left subtree + 1;
+        } else if(pos > offset && pos - avlCnt(node->left) <= offset) { //if the node exists left side of the node
+
+            node = node->left;
+            pos -= avlCnt(node->right) + 1;
+        } else { //if the node prest in the parent
+
+            AVLNode *parent = node->parent;
+            if(!parent) return NULL;
+
+            //if the node was the left child
+            if(parent->left == node) {
+                pos += avlCnt(node->right) + 1;
+            }
+            //if the node was the right child
+            if(parent->right == node) {
+                pos -= avlCnt(node->left) + 1;
+            }
+            node = parent;
+
+        }
+    }
+    return node;
+}
