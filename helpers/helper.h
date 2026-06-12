@@ -9,12 +9,14 @@ typedef std::vector<uint8_t> Buffer;
 
 const size_t k_max_msg = 32 << 20;  // likely larger than the kernel buffer
 
+
 // error code for TAG_ERR
 enum {
     ERR_UNKNOWN = 1,    // unknown command
     ERR_TOO_BIG = 2,    // response too big
+    ERR_BAD_TYP = 3,    // unexpected value type
+    ERR_BAD_ARG = 4,    // bad arguments
 };
-
 // data types of serialized data
 enum {
     TAG_NIL = 0,    // nil
@@ -42,6 +44,8 @@ void outInt(Buffer &out , uint64_t val);
 void outArr(Buffer &out , uint32_t n);
 void outDbl(Buffer &out , double val);
 void outErr(Buffer &out , uint32_t code , const std::string &msg);
+size_t outBeginArr(Buffer &out);
+void outEndArr(Buffer &out , size_t ctx , uint32_t len);
 
 //buffer consume helper
 void bufConsume(Buffer &buf , size_t n);
@@ -54,3 +58,7 @@ bool readStr(const uint8_t *&curr , const uint8_t *end , size_t len , std::strin
 void responseBegin(Buffer &out , size_t *header);
 size_t responseSize(Buffer &out , size_t header);
 void responseEnd(Buffer &out , size_t header);
+
+//string conversion functions
+bool str2dbl(const std::string &s , double &out); 
+bool str2int(const std::string &s , int64_t &out);

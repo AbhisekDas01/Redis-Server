@@ -24,3 +24,6 @@ struct ZNode {
 bool zsetInsert(ZSet *zset , const char *name, size_t len, double score);
 ZNode *zsetLookup(ZSet *zset, const char *name, size_t len);
 void   zsetDelete(ZSet *zset, ZNode *node);
+ZNode *zsetSeekge(ZSet *zset, double score, const char *name, size_t len);
+ZNode *znodeOffset(ZNode *node, int64_t offset);
+void zsetClear(ZSet *zset);

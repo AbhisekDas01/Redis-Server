@@ -2,8 +2,9 @@
 #include <cstring>
 #include <fcntl.h>
 #include <cerrno>
-#include <iostream>
 #include <cstdlib>
+#include <math.h>
+#include <assert.h>
 
 
 void bufAppend(Buffer &buf , const uint8_t *data , size_t size){
@@ -68,6 +69,17 @@ void outErr(Buffer &out , uint32_t code , const std::string &msg) {
     bufAppend(out , (const uint8_t*)msg.data() , msg.size());
 }
 
+size_t outBeginArr(Buffer &out) {
+    out.push_back(TAG_ARR);
+    bufAppendU32(out , 0); // length of the array to be full filled by the end
+    return out.size() - 4; //index to enter teh length
+}
+
+void outEndArr(Buffer &out , size_t ctx , uint32_t len) {
+    assert(out[ctx-1] == TAG_ARR);
+    memcpy(&out[ctx] , &len , 4);
+}
+
 //buffer consume helper
 void bufConsume(Buffer &buf , size_t n){
     buf.erase(buf.begin() , buf.begin()+n);
@@ -119,3 +131,16 @@ void responseEnd(Buffer &out , size_t header) {
     memcpy(&out[header] , &len , 4);
 }
 
+
+//string conversion functions
+bool str2dbl(const std::string &s , double &out) {
+    char *endp = NULL;
+    out = strtod(s.c_str() , &endp);
+    return endp == s.c_str() + s.size() && !isnan(out);
+}
+
+bool str2int(const std::string &s , int64_t &out) {
+    char *endp = NULL;
+    out = strtoll(s.c_str(), &endp, 10);
+    return endp == s.c_str() + s.size();
+}
