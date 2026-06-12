@@ -269,3 +269,26 @@ AVLNode *avl_offset(AVLNode *node, int64_t offset) {
     }
     return node;
 }
+
+//function to find the rank of the current node
+// returns the rank of node in sorted order
+int64_t avlRank(AVLNode *node) {
+
+    int64_t rank = 0;
+
+
+    rank += avlCnt(node->left) + 1; //if the node is the root node then we only find the count of the left subtree + 1
+
+    //if is has a parent and node is the right child of the parent
+    AVLNode *curr = node;
+    while(curr->parent) {
+        AVLNode *parent = curr->parent;
+        // If we came from the right child, the parent and all nodes in the parent's
+        // left subtree are smaller than our current node, so add them.
+        if(parent->right == curr) {
+            rank += avlCnt(parent->left) + 1;
+        }
+        curr = parent;
+    }
+    return rank;
+}

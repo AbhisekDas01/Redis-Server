@@ -38,6 +38,24 @@ static void die(const char *msg) {
     abort();
 }
 
+//set the file descriptors in non blocking mode
+static void fdSetNonBlock(int fd) {
+    errno = 0;
+    int flags = fcntl(fd , F_GETFL , 0);
+
+    if(errno) {
+        die("Fcntl Error");
+        return;
+    }
+
+    flags = flags | O_NONBLOCK; //add the nonblock option using the bit masking
+
+    errno = 0;
+    (void)fcntl(fd , F_SETFL , flags);
+        if(errno) {
+        die("Fcntl Error");
+    }
+}
 
 
 
@@ -57,7 +75,6 @@ struct Conn {
     //uint8_t = unsigned int of 8bits = 1bytes (0 - 255)range best for storing streamed data (char , image file , video);
 
 };
-
 
 
 
@@ -131,7 +148,19 @@ struct LookupKey {
     std::string key;
 };
 
+static Entry *entryNew(uint32_t type) {
+    Entry *ent = new Entry();
+    ent->type = type;
+    return ent;
+}
 
+static void entryDel(Entry *ent) {
+
+    if(ent->type == T_ZSET) {
+        zsetClear(&ent->zset);
+    }
+    delete ent;
+}
 
 //function to check the match for the keys
 static bool entryEq(HNode *lhs , HNode *rhs) {
@@ -146,71 +175,71 @@ static bool entryEq(HNode *lhs , HNode *rhs) {
  * 
  * REDIS FUNCTIONS (GET , SET , DEL)
  */
-
+// GET key
 static void doGet(std::vector<std::string> &cmd , Buffer &out) {
 
-    // cmd = {method , key , value}
-    Entry dummy; //create a dummy node just for lookup 
-    dummy.key.swap(cmd[1]); //insert the value of key
-
-    dummy.node.hcode = strHash((uint8_t *)dummy.key.data() , dummy.key.size()); //generate the hash for the key we are looking
-
-    //hashtable lookup
-    HNode *nodeFound = hmLookup(&gData.db , &dummy.node , &entryEq);
-
-    if(!nodeFound) { //not found 
+    //a dummy node for the lookup in the global hashmap
+    LookupKey key;
+    key.key.swap(cmd[1]);
+    key.node.hcode = strHash((uint8_t*)key.key.data() , key.key.size());
+    
+    // hashtable lookup
+    HNode *hnode = hmLookup(&gData.db , &key.node , &entryEq);
+    if(!hnode) { //if not found the entry
         return outNil(out);
     }
 
-    //data found (give the value in response)
-    const std::string &val = container_of(nodeFound , Entry , node)->val;
-    assert(val.size() <= k_max_msg);
-    return outStr(out , val.data() , val.size());
-
+    //extract the data
+    Entry *ent = container_of(hnode , Entry , node);
+    if(ent->type != T_STR) { //if the data is not a normal string
+        return outErr(out , ERR_BAD_TYP , "Not a String type");
+    }
+    return outStr(out , ent->str.data() , ent->str.size());
 }
 
 //SET function
 static void doSet(std::vector<std::string> &cmd , Buffer &out) {
+    // SET key value
+    LookupKey key;
+    key.key.swap(cmd[1]);
+    key.node.hcode = strHash((uint8_t*)key.key.data() , key.key.size());
 
-    Entry dummy;  // a dummy `Entry` just for the lookup
-    dummy.key.swap(cmd[1]); //swap is the faster option to insert the data to string
-
-    dummy.node.hcode = strHash((uint8_t *)dummy.key.data() , dummy.key.size()); //create the hash value
-
-    //lookup the key in the database to check if its already exists
-    HNode *nodeFound = hmLookup(&gData.db , &dummy.node , &entryEq);
-
-    if(nodeFound){ //update the value if the key already exists
-        container_of(nodeFound , Entry , node)->val.swap(cmd[2]);
-
+    // hashtable lookup
+    HNode *hnode = hmLookup(&gData.db , &key.node , &entryEq);
+    Entry *ent = NULL;
+    if(hnode) { //if data already exist the update the value 
+        
+        ent = container_of(hnode , Entry , node);
+        if(ent->type != T_STR) {
+            return outErr(out , ERR_BAD_TYP , "a non-string value exists");
+        }
     } else {
-        //if not exists then create one 
-        Entry *ent = new Entry();
-        ent->key.swap(dummy.key);
-        ent->val.swap(cmd[2]);
-        ent->node.hcode = dummy.node.hcode;
+        //create a new entry and insert into the global hashtable
+        ent = entryNew(T_STR);
+        ent->key.swap(key.key);
+        ent->node.hcode = key.node.hcode;
         hmInsert(&gData.db , &ent->node);
     }
-    
-    return outNil(out);
 
+    ent->str.swap(cmd[2]);
+    return outNil(out);
 }
 
 static void doDel(std::vector<std::string> &cmd , Buffer &out) {
 
-    //create a dummy Entry for lookup 
-    Entry dummy;
-    dummy.key.swap(cmd[1]);
+    //DEL key
+    // SET key value
+    LookupKey key;
+    key.key.swap(cmd[1]);
+    key.node.hcode = strHash((uint8_t*)key.key.data() , key.key.size());
 
-    dummy.node.hcode = strHash((uint8_t *)dummy.key.data() , dummy.key.size());
+    // hashtable lookup
+    HNode *hnode = hmDelete(&gData.db , &key.node , &entryEq);
 
-    HNode *nodeFound = hmDelete(&gData.db , &dummy.node , &entryEq); //detach the node
-
-    if(nodeFound) { //if node found delete delete it
-        delete container_of(nodeFound , Entry , node);
+    if(hnode) {
+        entryDel(container_of(hnode , Entry , node));
     }
-
-    return outInt(out  , nodeFound ? 1 : 0); // the number of deleted keys
+    return outInt(out , hnode? 1 : 0);
 }
 
 static bool cbKeys(HNode *node , void *arg) {
@@ -233,7 +262,7 @@ static ZSet *exceptZset(std::string &s) {
 
     LookupKey key;
     key.key.swap(s);
-    key.node.hcode = strHash((uint8_t *)key.key.data() , s.size());
+    key.node.hcode = strHash((uint8_t *)key.key.data() , key.key.size());
     //find the actual node using the dummy node
     HNode *hnode = hmLookup(&gData.db , &key.node , &entryEq);
     if(!hnode) {
@@ -241,6 +270,40 @@ static ZSet *exceptZset(std::string &s) {
     }
     Entry *ent = container_of(hnode , Entry , node);
     return ent->type == T_ZSET ? &ent->zset : NULL;
+}
+
+//zadd key score name
+static void doZadd(std::vector<std::string> &cmd , Buffer &out) {
+
+    std::string &name = cmd[3];
+    double score = 0;
+    if(!str2dbl(cmd[2] , score)) {
+        return outErr(out , ERR_BAD_ARG , "Expect a number");
+    }
+
+    //get the zset
+    LookupKey key;
+    key.key.swap(cmd[1]);
+    key.node.hcode = strHash((uint8_t *)key.key.data() , key.key.size());
+    HNode *hnode = hmLookup(&gData.db , &key.node, &entryEq);
+    
+    Entry *ent = NULL;
+    if(!hnode) { //if the key do not exists then create one 
+        ent = entryNew(T_ZSET);
+        ent->key.swap(key.key);
+        ent->node.hcode = strHash((uint8_t *)ent->key.data() , ent->key.size());
+        hmInsert(&gData.db , &ent->node); //insert the zset collection reference to the global hashmap
+    } else { //if node found then extract its Entry
+
+        ent = container_of(hnode , Entry , node);
+        if(ent->type != T_ZSET) {
+            return outErr(out , ERR_BAD_TYP , "Expect a ZSET");
+        }
+
+    }
+
+    bool added = zsetInsert(&ent->zset , name.data() , name.size() , score );
+    return outInt(out , (uint64_t)added);
 }
 
 static void doZquery(std::vector<std::string> &cmd , Buffer &out) {
@@ -280,40 +343,108 @@ static void doZquery(std::vector<std::string> &cmd , Buffer &out) {
     while(znode && n < limit) {
         outStr(out , znode->name , znode->len);
         outDbl(out , znode->score);
-        znodeOffset(znode , +1);
+        znode = znodeOffset(znode , +1);
         n+=2; //2 items inserted
     }
     outEndArr(out , ctx , n);
 }
 
+//Function to delete a node from the zset
+//zrem key name
+static void doZrem(std::vector<std::string> &cmd , Buffer &out) {
+
+    ZSet *zset = exceptZset(cmd[1]);
+    if(!zset) {
+        return outErr(out , ERR_BAD_TYP , "Expect zset");
+    }
+
+    std::string &name = cmd[2];
+
+    ZNode *znode = zsetLookup(zset , name.data() , name.size());
+
+    if(znode) {
+        zsetDelete(zset , znode);
+    }
+    return outInt(out , znode ? 1 : 0);
+}
+
+// zscore key name
+static void doZscore(std::vector<std::string> &cmd , Buffer &out) {
+
+    ZSet *zset = exceptZset(cmd[1]);
+    if(!zset) {
+        return outErr(out , ERR_BAD_TYP , "Expect zset");
+    }   
+
+    std::string &name = cmd[2];
+    ZNode *znode = zsetLookup(zset , name.data() , name.size());
+
+    return znode ? outDbl(out , znode->score) : outNil(out);
+}
 
 static void doRequest(std::vector<std::string> &cmd , Buffer &out) {
-
-    //Handle the GET Request
-    if(cmd.size() == 2 && cmd[0] == "get") {
-        doGet(cmd , out);
-        return;
+    if (cmd.empty()) {
+        return outErr(out, ERR_UNKNOWN, "Empty command!");
     }
 
-    //SET REquest
-    if(cmd.size() == 3 && cmd[0] == "set") {
-        doSet(cmd , out);
-        return;
+    const std::string &action = cmd[0];
+
+    // Standard Key-Value Commands
+    
+    // GET key: Retrieve the string value associated with a key
+    if (action == "get") {
+        if (cmd.size() != 2) {
+            return outErr(out, ERR_UNKNOWN, "Wrong number of arguments for 'get'");
+        }
+        doGet(cmd, out);
+    // SET key value: Insert or update a string value for a key
+    } else if (action == "set") {
+        if (cmd.size() != 3) {
+            return outErr(out, ERR_UNKNOWN, "Wrong number of arguments for 'set'");
+        }
+        doSet(cmd, out);
+    // DEL key: Delete a key-value entry from the database
+    } else if (action == "del") {
+        if (cmd.size() != 2) {
+            return outErr(out, ERR_UNKNOWN, "Wrong number of arguments for 'del'");
+        }
+        doDel(cmd, out);
+    // KEYS: Retrieve and list all keys currently stored in the database
+    } else if (action == "keys") {
+        if (cmd.size() != 1) {
+            return outErr(out, ERR_UNKNOWN, "Wrong number of arguments for 'keys'");
+        }
+        doKeys(cmd, out);
+
+    // Sorted Set (ZSET) Commands
+    
+    // ZADD key score name: Add or update a name with a double score in a sorted set
+    } else if (action == "zadd") {
+        if (cmd.size() != 4) {
+            return outErr(out, ERR_UNKNOWN, "Wrong number of arguments for 'zadd'");
+        }
+        doZadd(cmd, out);
+    // ZREM key name: Remove a name from a sorted set
+    } else if (action == "zrem") {
+        if (cmd.size() != 3) {
+            return outErr(out, ERR_UNKNOWN, "Wrong number of arguments for 'zrem'");
+        }
+        doZrem(cmd, out);
+    // ZSCORE key name: Get the score associated with a name in a sorted set
+    } else if (action == "zscore") {
+        if (cmd.size() != 3) {
+            return outErr(out, ERR_UNKNOWN, "Wrong number of arguments for 'zscore'");
+        }
+        doZscore(cmd, out);
+    // ZQUERY key score name offset limit: Query sorted set entries starting >= (score, name) with offset and limit
+    } else if (action == "zquery") {
+        if (cmd.size() != 6) {
+            return outErr(out, ERR_UNKNOWN, "Wrong number of arguments for 'zquery'");
+        }
+        doZquery(cmd, out);
+    } else {
+        outErr(out, ERR_UNKNOWN, "Unknown command!");
     }
-
-    //delete request
-    if(cmd.size() == 2 && cmd[0] == "del") {
-        doDel(cmd , out);
-        return;
-    }
-
-    if(cmd.size() == 1 && cmd[0] == "keys") {
-        doKeys(cmd , out);
-        return;
-    }
-
-    return outErr(out , ERR_UNKNOWN , "Unknown command!");
-
 }
 
 static bool tryOneRequest(Conn *conn) {
@@ -356,24 +487,6 @@ static bool tryOneRequest(Conn *conn) {
      bufConsume(conn->incoming , (size_t)(4+len));
 
      return true;
-}
-//set the file descriptors in non blocking mode
-static void fdSetNonBlock(int fd) {
-    errno = 0;
-    int flags = fcntl(fd , F_GETFL , 0);
-
-    if(errno) {
-        die("Fcntl Error");
-        return;
-    }
-
-    flags = flags | O_NONBLOCK; //add the nonblock option using the bit masking
-
-    errno = 0;
-    (void)fcntl(fd , F_SETFL , flags);
-        if(errno) {
-        die("Fcntl Error");
-    }
 }
 
 static Conn * handleAccept(int fd) {

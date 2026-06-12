@@ -139,7 +139,7 @@ bool str2dbl(const std::string &s , double &out) {
     return endp == s.c_str() + s.size() && !isnan(out);
 }
 
-bool str2int(const std::string &s , double &out) {
+bool str2int(const std::string &s , int64_t &out) {
     char *endp = NULL;
     out = strtoll(s.c_str(), &endp, 10);
     return endp == s.c_str() + s.size();
