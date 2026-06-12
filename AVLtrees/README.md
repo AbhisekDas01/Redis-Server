@@ -123,12 +123,15 @@ struct AVLNode {
 
 ### Core Interface
 
-* `void avlInit(AVLNode *node)`
-Initializes a detached standalone node wrapper. Sets default structure metrics (`height = 1`, `cnt = 1`).
-* `AVLNode *avlFix(AVLNode *node)`
-Ascends the pointer chain from the mutated element right up to the root, calculating tracking measurements and implementing corrective pivots on lopsided branches. Returns a pointer to the tree's final root.
-* `AVLNode *avlDel(AVLNode *node)`
-Orphans an active node from the structural layout safely, managing multi-child re-adoptions and balancing propagation updates automatically. Returns the new root pointer.
+| Function Signature | Description | Time Complexity | Space Complexity |
+| :--- | :--- | :--- | :--- |
+| `void avlInit(AVLNode *node)` | Initializes a detached standalone node wrapper. Sets default structure metrics (`height = 1`, `cnt = 1`). | $O(1)$ | $O(1)$ |
+| `uint32_t avlHeight(AVLNode *node)` | Safely retrieves the height of the node (returns `0` if `node` is `nullptr`). | $O(1)$ | $O(1)$ |
+| `uint32_t avlCnt(AVLNode *node)` | Safely retrieves the subtree node count of the node (returns `0` if `node` is `nullptr`). | $O(1)$ | $O(1)$ |
+| `AVLNode *avlFix(AVLNode *node)` | Re-balances the AVL tree from the mutated node up to the root, executing corrective rotations. Returns the new root. | $O(\log N)$ | $O(1)$ |
+| `AVLNode *avlDel(AVLNode *node)` | Safely detaches a node from the tree and re-balances. Returns the new root. | $O(\log N)$ | $O(1)$ |
+| `AVLNode *avl_offset(AVLNode *node, int64_t offset)` | Jumps relative to the given node by a positive or negative index offset using subtree count fields. | $O(\log N)$ | $O(1)$ |
+| `int64_t avlRank(AVLNode *node)` | Computes the 1-based rank (sorted order index) of a node within the tree by climbing to the root. | $O(\log N)$ | $O(1)$ |
 
 ---
 

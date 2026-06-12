@@ -339,12 +339,14 @@ static void doZquery(std::vector<std::string> &cmd , Buffer &out) {
     //3. iterate and output
     size_t ctx = outBeginArr(out);
     int64_t n = 0;
+    int64_t count = 0;
 
-    while(znode && n < limit) {
+    while(znode && count < limit) {
         outStr(out , znode->name , znode->len);
         outDbl(out , znode->score);
         znode = znodeOffset(znode , +1);
         n+=2; //2 items inserted
+        count++;
     }
     outEndArr(out , ctx , n);
 }

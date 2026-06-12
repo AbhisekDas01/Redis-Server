@@ -214,7 +214,47 @@ static void hmHelpRehash(HMap *hmap) {
 
 ---
 
-## 6. Syntax Navigation Cheat Sheet
+## 6. API Reference & Specifications
+
+### Struct Layouts
+
+```cpp
+struct HNode {
+    HNode *next = nullptr;
+    uint64_t hcode = 0; 
+};
+
+struct HTable {
+    HNode **tab = nullptr; 
+    size_t mask = 0;       
+    size_t size = 0;       
+};
+
+struct HMap {
+    HTable newer;
+    HTable older;
+    size_t migratePos = 0; 
+};
+```
+
+### Core Interface
+
+| Function Signature | Description | Time Complexity | Space Complexity |
+| :--- | :--- | :--- | :--- |
+| `HNode *hmLookup(HMap *hmap, HNode *key, bool (*eq)(HNode *, HNode *))` | Searches the map for the key node using the equality callback. Initiates progress rehashing. Returns the matching node or `nullptr`. | $O(1)$ average | $O(1)$ |
+| `void hmInsert(HMap *hmap, HNode *node)` | Inserts a new node into the map. Automatically triggers and processes progressive rehashing if load threshold is exceeded. | $O(1)$ average | $O(1)$ |
+| `HNode *hmDelete(HMap *hmap, HNode *key, bool (*eq)(HNode *, HNode *))` | Searches and detaches the key node from the map. Returns the detached node or `nullptr`. Does **not** free user payload memory. | $O(1)$ average | $O(1)$ |
+| `void hmClear(HMap *hmap)` | Deallocates internal bucket tables (`tab`) for both tables. Does **not** free individual intrusive user data node payloads. | $O(1)$ | $O(1)$ |
+| `size_t hmSize(HMap *hmap)` | Returns the total count of elements currently tracked inside both tables. | $O(1)$ | $O(1)$ |
+| `void hmForeach(HMap *hmap, bool (*f)(HNode *, void *), void *arg)` | Iterates over all active nodes in both tables. Stops early if callback `f` returns `false`. | $O(N)$ | $O(1)$ |
+
+> [!CAUTION]
+> **Intrusive Memory Boundary Reminder**
+> Like all intrusive data structure interfaces, `hmDelete` and `hmClear` only manage the internal pointer wiring of the map. They do **not** deallocate user data node payloads. The application layer must step backward to the container address using `container_of` and free payloads manually.
+
+---
+
+## 7. Syntax Navigation Cheat Sheet
 
 When operating within this codebase, use this language-level logic reference for managing types and memory access.
 

@@ -284,8 +284,8 @@ int main(int argc, char **argv)
     //binding
     struct sockaddr_in addr = {}; //initiazlise a sockadder_in sturcture
     addr.sin_family = AF_INET;
-    addr.sin_port = ntohs(1234);                   //htons converts the big endian  representation to little endian
-    addr.sin_addr.s_addr = ntohl(INADDR_LOOPBACK); //INADDR_LOOPBACK = 127.0.0.1(localhost)
+    addr.sin_port = htons(1234);                   //htons converts the host representation to network byte order
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK); //INADDR_LOOPBACK = 127.0.0.1(localhost)
 
     int rv = connect(fd, (const struct sockaddr *)&addr, sizeof(addr));
     if (rv)
