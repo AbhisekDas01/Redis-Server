@@ -382,6 +382,21 @@ static void doZscore(std::vector<std::string> &cmd , Buffer &out) {
     return znode ? outDbl(out , znode->score) : outNil(out);
 }
 
+static void doZrank(std::vector<std::string> &cmd , Buffer &out) {
+
+    ZSet *zset = exceptZset(cmd[1]);
+    if(!zset) {
+        return outErr(out , ERR_BAD_TYP , "Expect zset");
+    } 
+    std::string &name = cmd[2];
+
+    int64_t rank = zsetRank(zset , name.data() , name.size());
+    if(rank == -1) {
+        return outNil(out);
+    }
+    outInt(out , rank);
+}
+
 static void doRequest(std::vector<std::string> &cmd , Buffer &out) {
     if (cmd.empty()) {
         return outErr(out, ERR_UNKNOWN, "Empty command!");
@@ -442,6 +457,11 @@ static void doRequest(std::vector<std::string> &cmd , Buffer &out) {
             return outErr(out, ERR_UNKNOWN, "Wrong number of arguments for 'zquery'");
         }
         doZquery(cmd, out);
+    } else if (action == "zrank") {
+        if (cmd.size() != 3) {
+            return outErr(out, ERR_UNKNOWN, "Wrong number of arguments for 'zrank'");
+        }
+        doZrank(cmd , out);
     } else {
         outErr(out, ERR_UNKNOWN, "Unknown command!");
     }

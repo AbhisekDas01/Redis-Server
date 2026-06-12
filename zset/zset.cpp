@@ -163,6 +163,22 @@ void zsetDelete(ZSet *zset, ZNode *node) {
 }
 
 
+int64_t zsetRank(ZSet *zset , const char *name, size_t len) {
+
+    HKey key;
+    key.name = name;
+    key.len = len;
+    key.node.hcode = strHash((uint8_t*)key.name , key.len);
+    HNode *found = hmLookup(&zset->hmap , &key.node , &zcmp);
+
+    if(!found) {
+        return -1;
+    }
+    ZNode *node = container_of(found , ZNode , hmap);
+
+    return avlRank(&node->tree) - 1;
+}
+
 //ZQUERY key score name offset limit
 // At its core, ZQUERY key score name offset limit answers a complex user question like: "Give me 10 players (limit), skipping the first 500 (offset), starting exactly from a score of 1000, or alphabetically after 'Alice' if there's a score tie."
 

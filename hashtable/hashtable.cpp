@@ -198,3 +198,13 @@ const size_t k_max_load_factor = 8; //maximum keys we can store in a single chai
 
     hForEach(&hmap->newer , f , arg) && hForEach(&hmap->older , f , arg);
  }
+
+ void hmClear(HMap *hmap) {
+     if (hmap->newer.tab) {
+         free(hmap->newer.tab);
+     }
+     if (hmap->older.tab) {
+         free(hmap->older.tab);
+     }
+     *hmap = HMap{};
+ }

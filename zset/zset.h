@@ -27,3 +27,4 @@ void   zsetDelete(ZSet *zset, ZNode *node);
 ZNode *zsetSeekge(ZSet *zset, double score, const char *name, size_t len);
 ZNode *znodeOffset(ZNode *node, int64_t offset);
 void zsetClear(ZSet *zset);
+int64_t zsetRank(ZSet *zset , const char *name, size_t len);
