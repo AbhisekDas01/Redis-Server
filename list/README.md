@@ -63,12 +63,28 @@ struct Conn {
 A connection transitions dynamically between the `idleList` and the `ioList` depending on whether its buffers are empty or hold active data.
 
 ```mermaid
-graph LR
-    Start((New Conn)) -->|handleAccept| Idle[Idle List]
-    Idle -->|handleRead<br>Buffer not empty| IO[I/O List<br>Timer starts: ioStartMs]
-    IO -->|Partial Read/Write<br>keep ioStartMs| IO
-    IO -->|Complete<br>Buffers empty| Idle
+graph TD
+    Start((New Conn)) -->|handleAccept| Idle[Idle List<br/>Timeout: 5s]
+    
+    %% Transition to I/O List
+    Idle -->|POLLIN: handleRead<br/>incoming buffer gets data| IO[I/O List<br/>Timeout: 3s<br/>ioStartMs set]
+    
+    %% Loop during active transmission
+    IO -->|Partial read/write<br/>Buffers not empty| IO
+    
+    %% Return to Idle
+    IO -->|Transaction complete<br/>incoming & outgoing empty| Idle
+    
+    %% Timeout reaping
+    Idle -->|Idle time > 5s| Reaped1((Closed / Reaped))
+    IO -->|I/O time > 3s| Reaped2((Closed / Reaped))
+    
+    classDef reaped fill:#ffcccc,stroke:#ff3333,stroke-width:1px;
+    classDef active fill:#e6f3ff,stroke:#3399ff,stroke-width:1px;
+    class Reaped1,Reaped2 reaped;
+    class Idle,IO active;
 ```
+
 
 
 ---
