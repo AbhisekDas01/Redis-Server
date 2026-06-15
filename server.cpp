@@ -19,6 +19,7 @@
 #include "common.h"
 #include "helpers/helper.h"
 #include "list/list.h" //used to implement the doubly LL for the standard timout for the connections
+#include "heap/heap.h"
 
 //hashmap
 #include "hashtable/hashtable.h"
@@ -148,6 +149,9 @@ static struct {
     // timers for idle connections , read and write
     DList idleList;    // list head
     DList ioList;
+
+    //for TTL
+    std::vector<HeapItem> heap;
 } gData;
 
 enum {
@@ -161,6 +165,9 @@ enum {
 struct Entry {
     struct HNode node;  // hashtable node
     std::string key;
+
+     // for TTL
+    size_t heap_idx = -1;   // array index to the heap item
     // value
     uint32_t type = 0;
     // one of the following
@@ -168,11 +175,16 @@ struct Entry {
     ZSet zset;
 };
 
+
+
 //dummy node to check find the the key in the hashmap
 struct LookupKey {
     struct HNode node;
     std::string key;
 };
+
+static void entrySetTTL(Entry *ent , int64_t ttl_ms);
+static bool hnode_same(HNode *node , HNode *key);
 
 static Entry *entryNew(uint32_t type) {
     Entry *ent = new Entry();
@@ -182,6 +194,7 @@ static Entry *entryNew(uint32_t type) {
 
 static void entryDel(Entry *ent) {
 
+    entrySetTTL(ent , -1);
     if(ent->type == T_ZSET) {
         zsetClear(&ent->zset);
     }
@@ -191,7 +204,7 @@ static void entryDel(Entry *ent) {
 //function to check the match for the keys
 static bool entryEq(HNode *lhs , HNode *rhs) {
     struct Entry *le = container_of(lhs , struct Entry , node);
-    struct Entry *re = container_of(rhs , struct Entry , node);
+    struct LookupKey *re = container_of(rhs , struct LookupKey , node);
     return le->key == re->key;
 }
 
@@ -425,6 +438,80 @@ static void doZrank(std::vector<std::string> &cmd , Buffer &out) {
     outInt(out , rank);
 }
 
+static void doSetTTL(std::vector<std::string> &cmd , Buffer &out) {
+
+    //parse the args
+    int64_t ttlMs = 0;
+    if(!str2int(cmd[2] , ttlMs)) {
+        return outErr(out , ERR_BAD_ARG , "expect a int64");
+    }
+
+    LookupKey key;
+    key.key.swap(cmd[1]);
+    key.node.hcode = strHash((uint8_t *)key.key.data() , key.key.size());
+    HNode *hnode = hmLookup(&gData.db , &key.node , &entryEq);
+
+    //set ttl
+    if(hnode) {
+        Entry *ent = container_of(hnode , Entry , node);
+        if (ttlMs <= 0) { //if the time is -ve then remove the key
+            hmDelete(&gData.db , &ent->node , &hnode_same);
+            entryDel(ent);
+        } else {
+            entrySetTTL(ent , ttlMs);
+        }
+    }
+    return outInt(out , hnode ? 1 : 0);
+}
+
+static void doSeeTTL(std::vector<std::string> &cmd , Buffer &out) {
+
+    LookupKey key;
+    key.key.swap(cmd[1]);
+    key.node.hcode = strHash((uint8_t*)key.key.data() , key.key.size());
+    HNode *hnode = hmLookup(&gData.db , &key.node , &entryEq);
+
+    if(!hnode) {
+        return outInt(out , -2);
+    }
+
+    Entry *ent = container_of(hnode , Entry , node);
+    if(ent->heap_idx == (size_t)-1) {
+        return outInt(out , -1);
+    }
+
+    uint64_t nowMs = getMonotonicMsec();
+    uint64_t expireMs = gData.heap[ent->heap_idx].val;
+    if(expireMs <= nowMs) {
+        return outInt(out , 0);
+    }
+
+    return outInt(out , (int64_t)(expireMs - nowMs));
+}
+
+// function to remove the ttl key to normal key
+//PERSIST key
+static void doSetPersist(std::vector<std::string> &cmd , Buffer &out) {
+
+    LookupKey key;
+    key.key.swap(cmd[1]);
+    key.node.hcode = strHash((uint8_t*)key.key.data() , key.key.size());
+    HNode *hnode = hmLookup(&gData.db , &key.node , &entryEq);
+
+    int success = 0;
+    if(hnode) {
+        Entry *ent = container_of(hnode , Entry , node);
+
+        if(ent->heap_idx != (size_t)-1) {
+            heapDelete(gData.heap , ent->heap_idx);
+            ent->heap_idx = -1;
+            success = 1;
+        }
+    }
+
+    return outInt(out , success);
+}
+
 static void doRequest(std::vector<std::string> &cmd , Buffer &out) {
     if (cmd.empty()) {
         return outErr(out, ERR_UNKNOWN, "Empty command!");
@@ -490,6 +577,21 @@ static void doRequest(std::vector<std::string> &cmd , Buffer &out) {
             return outErr(out, ERR_UNKNOWN, "Wrong number of arguments for 'zrank'");
         }
         doZrank(cmd , out);
+    } else if (action == "pexpire") { 
+        if (cmd.size() != 3) {
+            return outErr(out, ERR_UNKNOWN, "Wrong number of arguments for 'pexpire'");
+        }
+        doSetTTL(cmd , out);
+    } else if (action == "pttl") {
+        if (cmd.size() != 2) {
+            return outErr(out, ERR_UNKNOWN, "Wrong number of arguments for 'pttl'");
+        }
+        doSeeTTL(cmd , out);
+    } else if (action == "persist") {
+        if (cmd.size() != 2) {
+            return outErr(out, ERR_UNKNOWN, "Wrong number of arguments for 'persist'");
+        }
+        doSetPersist(cmd , out);
     } else {
         outErr(out, ERR_UNKNOWN, "Unknown command!");
     }
@@ -652,12 +754,9 @@ const uint64_t k_io_timeout_ms = 3 * 1000; //maximum 3sec
 //function to find the remaining time of the 1st node (idle times are stored in the fifo order)
 static int32_t nextTimerMs() {
 
-    if(dlistEmpty(&gData.idleList) && dlistEmpty(&gData.ioList)) {
-        return -1; //if no timer is there . no timeout
-    }
-
+    
     uint64_t nowMs = getMonotonicMsec(); // get current timestamp
-    uint64_t maxTimeout = 0;
+    uint64_t maxTimeout = (uint64_t)-1; //to get the maximum value
 
     
     if(!dlistEmpty(&gData.idleList)) {
@@ -671,6 +770,14 @@ static int32_t nextTimerMs() {
         if(maxTimeout == 0 || nextIo < maxTimeout) {
             maxTimeout = nextIo; //means the io is expiring soon
         }
+    }
+    //check for teh expire timer
+    if(!gData.heap.empty() && gData.heap[0].val < maxTimeout) {
+        maxTimeout = gData.heap[0].val;
+    }
+
+    if(maxTimeout == (uint64_t)-1) { //if the value is unchanged then no timers
+        return -1;
     }
 
     if(maxTimeout <= nowMs) { //If the earliest deadline has already passed, wake up immediately
@@ -687,6 +794,12 @@ static void connDestroy(Conn *conn) {
     gData.fd2conn[conn->fd] = NULL;
     delete conn;
 }
+
+static bool hnode_same(HNode *node , HNode *key) {
+    return node == key;
+}
+
+
 
 //function to remove the timed out connections
 static void processTimers() {
@@ -723,6 +836,19 @@ static void processTimers() {
         }
 
     }
+
+
+    //remove the TTL
+    const size_t k_max_works = 2000; //these are the max number of ttl expire work at a single iteration
+    size_t nworks = 0; 
+
+    std::vector<HeapItem> &heap = gData.heap;
+    while (!heap.empty() && heap[0].val < nowMs && nworks++ < k_max_works) {
+        Entry *ent = container_of(heap[0].ref , Entry , heap_idx);
+        //delete the node for the storage
+        hmDelete(&gData.db , &ent->node , &hnode_same);
+        entryDel(ent);
+    }
 }
 
 static void connUpdateTimer(Conn *conn) {
@@ -747,6 +873,22 @@ static void connUpdateTimer(Conn *conn) {
         conn->lastActiveMs = getMonotonicMsec();
         dlistDetach(&conn->idleNode); //remove from old pos
         dlistInsertBefore(&gData.idleList , &conn->idleNode);
+    }
+}
+
+static void entrySetTTL(Entry *ent , int64_t ttl_ms) {
+
+    if(ttl_ms < 0) {
+        if (ent->heap_idx != (size_t)-1) {
+            //seting a -ve timer means deleting the ttl
+            heapDelete(gData.heap , ent->heap_idx);
+            ent->heap_idx = -1;
+        }
+    } else { //if the ttlms is >= 0 then addnew or update exiting the data
+
+        uint64_t expires_at = getMonotonicMsec() + (uint64_t)ttl_ms;
+        HeapItem t = {(uint64_t)expires_at , &ent->heap_idx};
+        heapUpsert(gData.heap , ent->heap_idx , t);
     }
 }
 

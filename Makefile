@@ -10,7 +10,8 @@ SERVER_SRCS = server.cpp \
               helpers/helper.cpp \
               hashtable/hashtable.cpp \
               zset/zset.cpp \
-              AVLtrees/avl.cpp
+              AVLtrees/avl.cpp \
+              heap/heap.cpp
 
 CLIENT_SRCS = client.cpp
 
