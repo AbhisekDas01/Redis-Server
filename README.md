@@ -45,24 +45,24 @@ flowchart TB
     end
 
     %% Flow/Connections
-    C1 <-->|Read/Write Streams| Poll
-    C2 <-->|Read/Write Streams| Poll
+    C1 ---|Read/Write Streams| Poll
+    C2 ---|Read/Write Streams| Poll
     
     Poll -->|Route Commands| Cmd
     Poll -->|Manage Timeouts| ConnMgr
     Poll -->|Trigger Expiration| ExpiryMgr
 
-    Cmd <-->|Read/Write KV| DB
-    Cmd <-->|Read/Write Sorted Set| ZSet
+    Cmd ---|Read/Write KV| DB
+    Cmd ---|Read/Write Sorted Set| ZSet
     
-    ExpiryMgr <-->|Peek/Pop TTL| TTLHeap
+    ExpiryMgr ---|Peek/Pop TTL| TTLHeap
     ExpiryMgr -->|Unlink Expired Keys| DB
 
-    ConnMgr <-->|Track Idle Conn| IdleList
+    ConnMgr ---|Track Idle Conn| IdleList
     
     %% Unlinking offload
-    DB -.->|Offload O(N) Deletions| TQueue
-    ZSet -.->|Offload O(N) Deletions| TQueue
+    DB -->|Offload O(N) Deletions| TQueue
+    ZSet -->|Offload O(N) Deletions| TQueue
     TQueue -->|Process Tasks| Workers
 ```
 

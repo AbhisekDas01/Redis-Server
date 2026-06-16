@@ -73,17 +73,17 @@ An AVL tree enforces a strict rule: the height difference between the left and r
 Triggered when the right child's right side stretches too deep. The system re-parents the inner subtree and pulls the right child up to restore balance.
 
 ```mermaid
-graph TD
-    subgraph Before Rotation (Right-Right Heavy)
+flowchart LR
+    subgraph Before ["Before Rotation (Right-Right Heavy)"]
         A[Node 20] -->|Left| B[Node 10]
         A -->|Right| C[Node 40]
         C -->|Left / Inner| D[Node 30]
         C -->|Right| E[Node 50]
     end
-```
-```mermaid
-graph TD
-    subgraph After Rotation (Balanced)
+
+    Before == Left Rotation on 20 ==> After
+
+    subgraph After ["After Rotation (Balanced)"]
         F[Node 40] -->|Left| G[Node 20]
         F -->|Right| H[Node 50]
         G -->|Left| I[Node 10]
