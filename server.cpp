@@ -12,6 +12,7 @@
 #include <poll.h>
 #include <fcntl.h>
 #include <time.h>
+#include <signal.h>
 
 //STL
 #include <vector>
@@ -25,6 +26,8 @@
 #include "hashtable/hashtable.h"
 #include "zset/zset.h"
 
+//to use the multithreading
+#include "threadPool/threadPool.h"
 
 
 static void msg(const char *msg) {
@@ -50,6 +53,12 @@ static uint64_t getMonotonicMsec() {
     struct timespec tv = {0 , 0};
     clock_gettime(CLOCK_MONOTONIC, &tv);
     return uint64_t(tv.tv_sec) * 1000 + tv.tv_nsec/ 1000000; //convert to ms
+}
+
+static volatile sig_atomic_t g_stop = 0;
+static void handle_signal(int sig) {
+    (void)sig;
+    g_stop = 1;
 }
 
 //set the file descriptors in non blocking mode
@@ -152,6 +161,9 @@ static struct {
 
     //for TTL
     std::vector<HeapItem> heap;
+
+    //the thread pool
+    ThreadPool threadPool;
 } gData;
 
 enum {
@@ -192,13 +204,32 @@ static Entry *entryNew(uint32_t type) {
     return ent;
 }
 
-static void entryDel(Entry *ent) {
-
-    entrySetTTL(ent , -1);
+//function to delete the zset sunchronously
+static void entryDelSync(Entry *ent) {
     if(ent->type == T_ZSET) {
         zsetClear(&ent->zset);
     }
     delete ent;
+}
+
+static void entryDelFun(void *arg) { //exaction function signature for the thread pool
+
+    entryDelSync((Entry *) arg);
+}
+
+
+static void entryDel(Entry *ent) {
+
+    //unlink from any data structure 
+    entrySetTTL(ent , -1); // remove from the heap data structure
+    size_t size = (ent->type == T_ZSET) ? hmSize(&ent->zset.hmap) : 0;
+    const size_t k_large_container_size = 1000;
+
+    if(size > k_large_container_size) { //use background thread to do the job to avoid blockage
+        threadPoolQueue(&gData.threadPool , &entryDelFun , ent);
+    } else {
+        entryDelSync(ent); // small; avoid context switches
+    }
 }
 
 //function to check the match for the keys
@@ -893,6 +924,12 @@ static void entrySetTTL(Entry *ent , int64_t ttl_ms) {
 }
 
 int main() {
+    // Register shutdown signals
+    signal(SIGINT, handle_signal); //signal interrupt (Ctrl + C)
+    signal(SIGTERM, handle_signal); //interrupt by the kill <PID>
+
+    //initialise the threadpool
+    threadPoolInit(&gData.threadPool , 4);
 
     //initialization of the list
     dlistInit(&gData.idleList);
@@ -947,7 +984,7 @@ int main() {
         short int revents; -> filled by the kernel
     }*/
 
-    while(true) {
+    while(!g_stop) {
         pollArgs.clear(); //first clear the old connection in case any connection is destroyed or closed that should also be removed
 
         //insert the listening socket to the zero index 
@@ -1039,6 +1076,9 @@ int main() {
 
     }
     
-    return 0;
+    std::cout << "\nServer is shutting down..." << std::endl;
+    threadPoolDestroy(&gData.threadPool);
+    close(fd);
 
+    return 0;
 }
