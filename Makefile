@@ -11,7 +11,8 @@ SERVER_SRCS = server.cpp \
               hashtable/hashtable.cpp \
               zset/zset.cpp \
               AVLtrees/avl.cpp \
-              heap/heap.cpp
+              heap/heap.cpp \
+              threadPool/threadPool.cpp
 
 CLIENT_SRCS = client.cpp
 
