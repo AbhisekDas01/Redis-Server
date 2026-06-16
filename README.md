@@ -17,31 +17,31 @@ flowchart TB
     classDef database fill:#ffe0b2,stroke:#ff9800,stroke-width:2px,color:#e65100;
     classDef async fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px,color:#4a148c;
 
-    subgraph ClientLayer [Client Connections]
-        C1[Client 1]:::client
-        C2[Client 2]:::client
+    subgraph ClientLayer ["Client Connections"]
+        C1["Client 1"]
+        C2["Client 2"]
     end
 
-    subgraph NetworkLayer [I/O Multiplexing & Network]
-        Poll[poll Event Loop]:::network
+    subgraph NetworkLayer ["I/O Multiplexing & Network"]
+        Poll["poll Event Loop"]
     end
 
-    subgraph CoreLayer [Core Engine & Managers]
-        Cmd[Command Router]:::core
-        ConnMgr[Connection Manager]:::core
-        ExpiryMgr[Expiry Processor]:::core
+    subgraph CoreLayer ["Core Engine & Managers"]
+        Cmd["Command Router"]
+        ConnMgr["Connection Manager"]
+        ExpiryMgr["Expiry Processor"]
     end
 
-    subgraph DatabaseLayer [In-Memory Storage Engine]
-        DB[(Intrusive HMap)]:::database
-        ZSet[Sorted Set: HMap + AVL Tree]:::database
-        TTLHeap[TTL Min-Heap]:::database
-        IdleList[Idle Doubly-Linked List]:::database
+    subgraph DatabaseLayer ["In-Memory Storage Engine"]
+        DB[("Intrusive HMap")]
+        ZSet["Sorted Set: HMap + AVL Tree"]
+        TTLHeap["TTL Min-Heap"]
+        IdleList["Idle Doubly-Linked List"]
     end
 
-    subgraph BackgroundLayer [Asynchronous Worker Thread Pool]
-        TQueue[Shared Task Queue]:::async
-        Workers[Background Threads]:::async
+    subgraph BackgroundLayer ["Asynchronous Worker Thread Pool"]
+        TQueue["Shared Task Queue"]
+        Workers["Background Threads"]
     end
 
     %% Flow/Connections
@@ -64,6 +64,13 @@ flowchart TB
     DB -->|Offload O(N) Deletions| TQueue
     ZSet -->|Offload O(N) Deletions| TQueue
     TQueue -->|Process Tasks| Workers
+
+    %% Apply Classes
+    class C1,C2 client;
+    class Poll network;
+    class Cmd,ConnMgr,ExpiryMgr core;
+    class DB,ZSet,TTLHeap,IdleList database;
+    class TQueue,Workers async;
 ```
 
 ### Key Engineering Subsystems
