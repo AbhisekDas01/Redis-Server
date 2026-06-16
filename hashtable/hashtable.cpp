@@ -78,7 +78,7 @@ static void hmHelpRehashint(HMap *hmap) {
 
         //find a non empty slot to migrate
         HNode **from = &hmap->older.tab[hmap->migratePos];
-        if(!from) { //if the slot is empty then move to next slot
+        if(!*from) { //if the slot is empty then move to next slot
             hmap->migratePos++;
             continue;
         }
