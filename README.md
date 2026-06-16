@@ -61,8 +61,8 @@ flowchart TB
     ConnMgr ---|Track Idle Conn| IdleList
     
     %% Unlinking offload
-    DB -->|Offload O(N) Deletions| TQueue
-    ZSet -->|Offload O(N) Deletions| TQueue
+    DB -->|Offload large Deletions| TQueue
+    ZSet -->|Offload large Deletions| TQueue
     TQueue -->|Process Tasks| Workers
 
     %% Apply Classes
