@@ -134,3 +134,7 @@ You can run commands like:
 * `zquery myzset 10.0 memberA 0 10`
 * `pexpire mykey 10000` (expires in 10 seconds)
 * `pttl mykey`
+
+## 🔗 Reference
+
+https://build-your-own.org/redis/
