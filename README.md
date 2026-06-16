@@ -137,4 +137,4 @@ You can run commands like:
 
 ## 🔗 Reference
 
-https://build-your-own.org/redis/
+[Build Your Own Redis](https://build-your-own.org/redis/)
