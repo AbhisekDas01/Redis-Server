@@ -33,7 +33,7 @@ flowchart TB
     end
 
     subgraph DatabaseLayer ["In-Memory Storage Engine"]
-        DB[("Intrusive HMap")]
+        DB["Intrusive HMap"]
         ZSet["Sorted Set: HMap + AVL Tree"]
         TTLHeap["TTL Min-Heap"]
         IdleList["Idle Doubly-Linked List"]
