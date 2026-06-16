@@ -9,20 +9,61 @@ A high-performance, single-threaded event-loop based in-memory key-value store b
 The server uses an asynchronous **Event Loop** multiplexed with `poll` to manage thousands of concurrent client connections. 
 
 ```mermaid
-graph TD
-    classDef server fill:#1f77b4,stroke:#115588,stroke-width:2px,color:#fff;
-    classDef db fill:#2ca02c,stroke:#116611,stroke-width:2px,color:#fff;
-    classDef threads fill:#9467bd,stroke:#552288,stroke-width:2px,color:#fff;
+flowchart TB
+    %% Styling Definitions
+    classDef client fill:#e1f5fe,stroke:#039be5,stroke-width:2px,color:#01579b;
+    classDef network fill:#fff9c4,stroke:#fbc02d,stroke-width:2px,color:#f57f17;
+    classDef core fill:#e8f5e9,stroke:#4caf50,stroke-width:2px,color:#1b5e20;
+    classDef database fill:#ffe0b2,stroke:#ff9800,stroke-width:2px,color:#e65100;
+    classDef async fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px,color:#4a148c;
 
-    Client1[Client 1] -->|TCP Requests| EventLoop[poll Event Loop]:::server
-    Client2[Client 2] -->|TCP Requests| EventLoop
+    subgraph ClientLayer [Client Connections]
+        C1[Client 1]:::client
+        C2[Client 2]:::client
+    end
+
+    subgraph NetworkLayer [I/O Multiplexing & Network]
+        Poll[poll Event Loop]:::network
+    end
+
+    subgraph CoreLayer [Core Engine & Managers]
+        Cmd[Command Router]:::core
+        ConnMgr[Connection Manager]:::core
+        ExpiryMgr[Expiry Processor]:::core
+    end
+
+    subgraph DatabaseLayer [In-Memory Storage Engine]
+        DB[(Intrusive HMap)]:::database
+        ZSet[Sorted Set: HMap + AVL Tree]:::database
+        TTLHeap[TTL Min-Heap]:::database
+        IdleList[Idle Doubly-Linked List]:::database
+    end
+
+    subgraph BackgroundLayer [Asynchronous Worker Thread Pool]
+        TQueue[Shared Task Queue]:::async
+        Workers[Background Threads]:::async
+    end
+
+    %% Flow/Connections
+    C1 <-->|Read/Write Streams| Poll
+    C2 <-->|Read/Write Streams| Poll
     
-    EventLoop -->|Lookup & Update| Hashtable[(Intrusive HMap)]:::db
-    EventLoop -->|Sorted Operations| ZSet[(Hybrid ZSet: AVL Tree + HMap)]:::db
-    EventLoop -->|Key Expiration| TTLHeap[TTL Min-Heap]:::db
-    EventLoop -->|Connection Ageing| IdleList[Idle Double-Linked List]:::db
+    Poll -->|Route Commands| Cmd
+    Poll -->|Manage Timeouts| ConnMgr
+    Poll -->|Trigger Expiration| ExpiryMgr
 
-    EventLoop -->|Offload O(N) Deletions| ThreadPool[Background Thread Pool]:::threads
+    Cmd <-->|Read/Write KV| DB
+    Cmd <-->|Read/Write Sorted Set| ZSet
+    
+    ExpiryMgr <-->|Peek/Pop TTL| TTLHeap
+    ExpiryMgr -->|Unlink Expired Keys| DB
+
+    ConnMgr <-->|Track Idle Conn| IdleList
+    
+    %% Unlinking offload
+    DB -.->|Offload O(N) Deletions| TQueue
+    ZSet -.->|Offload O(N) Deletions| TQueue
+    TQueue -->|Process Tasks| Workers
 ```
 
 ### Key Engineering Subsystems
