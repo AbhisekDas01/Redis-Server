@@ -486,8 +486,8 @@ static void doSetTTL(std::vector<std::string> &cmd , Buffer &out) {
     if(hnode) {
         Entry *ent = container_of(hnode , Entry , node);
         if (ttlMs <= 0) { //if the time is -ve then remove the key
-            hmDelete(&gData.db , &ent->node , &hnode_same);
-            entryDel(ent);
+            hmDelete(&gData.db , &ent->node , &hnode_same);//unlink the node from the global hashmap
+            entryDel(ent); //send the data to be deleted
         } else {
             entrySetTTL(ent , ttlMs);
         }
